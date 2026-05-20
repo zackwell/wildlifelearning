@@ -1,0 +1,210 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Nature+ Canvas 主色：暖沙、陶土、奶油字、翠绿按钮 */
+  --np-paper: #faf6f0;
+  --np-peach: #eed2a9;
+  --np-terracotta: #c97b63;
+  --np-cream: #fff8f0;
+  --np-brand-line: #d4a574;
+  --np-cta: #10b981;
+  --np-cta-hover: #059669;
+  --np-cta-ink: #0f172a;
+
+  /* 欢迎页标题字色（仅 Nature+ / 智能图鉴） */
+  --np-welcome-brand: #eed9c4;
+  --np-welcome-title: #f5f5f5;
+
+  --background: var(--np-paper);
+  --foreground: #1c1917;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --np-paper: #141210;
+    --np-peach: #2a241c;
+    --np-terracotta: #e8a090;
+    --np-cream: #fff4e6;
+    --np-brand-line: #e4c49a;
+    --np-cta: #34d399;
+    --np-cta-hover: #10b981;
+    --np-cta-ink: #022c22;
+
+    --np-welcome-brand: #e8dcc8;
+    --np-welcome-title: #fafafa;
+
+    --background: var(--np-paper);
+    --foreground: #f5f0e8;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+.markdown-body {
+  @apply max-w-none text-base leading-relaxed text-emerald-950/95 dark:text-emerald-50/95;
+}
+
+.markdown-body h2 {
+  @apply mt-8 text-xl font-semibold text-emerald-900 dark:text-emerald-100;
+}
+
+.markdown-body > :first-child {
+  @apply mt-0;
+}
+
+.markdown-body p {
+  @apply mt-3;
+}
+
+.markdown-body h1 {
+  @apply mt-6 text-2xl font-bold text-emerald-950 dark:text-emerald-50;
+}
+
+.markdown-body h3 {
+  @apply mt-6 text-lg font-semibold text-emerald-900 dark:text-emerald-100;
+}
+
+.markdown-body ul {
+  @apply mt-3 list-disc pl-6;
+}
+
+.markdown-body ol {
+  @apply mt-3 list-decimal pl-6;
+}
+
+.markdown-body blockquote {
+  @apply my-4 border-l-4 border-emerald-600/45 py-0.5 pl-4 text-emerald-900/90 not-italic dark:border-emerald-400/35 dark:text-emerald-100/90;
+}
+
+.markdown-body table {
+  @apply my-4 w-full min-w-[280px] border-collapse text-sm;
+}
+
+.markdown-body thead {
+  @apply bg-emerald-100/60 dark:bg-emerald-900/50;
+}
+
+.markdown-body th,
+.markdown-body td {
+  @apply border border-emerald-900/15 px-3 py-2 text-left align-top font-normal dark:border-emerald-100/15;
+}
+
+.markdown-body th {
+  @apply font-semibold text-emerald-900 dark:text-emerald-100;
+}
+
+.markdown-body tbody tr:nth-child(even) {
+  @apply bg-emerald-50/40 dark:bg-emerald-950/25;
+}
+
+.markdown-body strong {
+  @apply font-semibold text-emerald-900 dark:text-emerald-100;
+}
+
+.markdown-body a {
+  @apply text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300;
+}
+
+.markdown-body code {
+  @apply rounded bg-emerald-900/5 px-1 py-0.5 font-mono text-sm dark:bg-emerald-100/10;
+}
+
+/* 模型长文卡片：略小字号，标题层级与外层 h4 更协调 */
+.markdown-body--compact {
+  @apply text-sm leading-relaxed;
+}
+
+.markdown-body--compact h1 {
+  @apply mt-4 text-lg font-bold;
+}
+
+.markdown-body--compact h2 {
+  @apply mt-5 text-base font-semibold;
+}
+
+.markdown-body--compact h3 {
+  @apply mt-4 text-sm font-semibold;
+}
+
+.markdown-body--compact p {
+  @apply mt-2 font-normal;
+}
+
+.markdown-body--compact ul,
+.markdown-body--compact ol {
+  @apply mt-2 text-sm;
+}
+
+.markdown-body--compact li {
+  @apply font-normal;
+}
+
+.markdown-body--compact strong {
+  @apply font-semibold;
+}
+
+.markdown-body--compact blockquote {
+  @apply my-3 text-sm;
+}
+
+.markdown-body--compact table {
+  @apply text-xs;
+}
+
+/* 探索动物预览区：与 sky 卡片统一色系 */
+.markdown-body--field-explore {
+  @apply text-sky-950/95 dark:text-sky-50/95;
+}
+
+.markdown-body--field-explore h1 {
+  @apply text-sky-950 dark:text-sky-50;
+}
+
+.markdown-body--field-explore h2 {
+  @apply border-sky-900/15 text-sky-900 dark:border-sky-100/15 dark:text-sky-100;
+}
+
+.markdown-body--field-explore h3 {
+  @apply text-sky-900 dark:text-sky-100;
+}
+
+.markdown-body--field-explore strong {
+  @apply text-sky-900 dark:text-sky-100;
+}
+
+.markdown-body--field-explore a {
+  @apply text-sky-800 dark:text-sky-200;
+}
+
+.markdown-body--field-explore blockquote {
+  @apply border-sky-600/40 text-sky-900/90 dark:border-sky-400/35 dark:text-sky-100/90;
+}
+
+.markdown-body--field-explore code {
+  @apply bg-sky-900/10 text-sky-900 dark:bg-sky-100/10 dark:text-sky-100;
+}
+
+.markdown-body--field-explore th,
+.markdown-body--field-explore td {
+  @apply border-sky-900/15 dark:border-sky-100/15;
+}
+
+.markdown-body--field-explore thead {
+  @apply bg-sky-100/60 dark:bg-sky-900/45;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
