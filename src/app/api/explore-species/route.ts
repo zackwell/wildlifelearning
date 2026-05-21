@@ -32,6 +32,8 @@ import {
 } from "@/lib/species-image-search-context";
 
 export const runtime = "nodejs";
+/** 图鉴生成含多次 LLM，自托管也建议 Nginx proxy_read_timeout ≥ 300s */
+export const maxDuration = 300;
 
 const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 10;
@@ -319,6 +321,24 @@ export async function POST(req: Request) {
       searchQueryEn = query.trim();
     }
 
+    const preliminarySearchQueryEn = searchQueryEn;
+    let galleryPrefetch: ReturnType<typeof resolveSpeciesGalleryWithFallback> | null = null;
+    if (isValidImageSearchCommonName(preliminarySearchQueryEn)) {
+      const prefetchCtx = buildSpeciesImageSearchContext({
+        userQuery: query,
+        scientificName: imageSciHint,
+        searchQueryEn: preliminarySearchQueryEn!,
+      });
+      galleryPrefetch = resolveSpeciesGalleryWithFallback(
+        {
+          userQuery: query,
+          scientificName: imageSciHint,
+          imageSearchContext: prefetchCtx,
+        },
+        null,
+      );
+    }
+
     if (useImageFallback && /[\u4e00-\u9fff]/.test(imageFallbackQuery)) {
       fallbackSearchQueryEn = await translateSpeciesNameForImageSearch(client, chatModel, {
         nameZh: imageFallbackQuery,
@@ -460,40 +480,54 @@ export async function POST(req: Request) {
     let imageUrls: string[] = [];
     let imageProvider: "unsplash" | null = null;
     try {
-      const primaryCtx = isValidImageSearchCommonName(searchQueryEn)
-        ? buildSpeciesImageSearchContext({
-            userQuery: query,
-            scientificName: payload.scientificName,
-            searchQueryEn,
-          })
-        : null;
-      const fallbackCtx =
-        useImageFallback && isValidImageSearchCommonName(fallbackSearchQueryEn)
+      const finalEn = searchQueryEn?.trim().toLowerCase() ?? "";
+      const prefetchEn = preliminarySearchQueryEn?.trim().toLowerCase() ?? "";
+      const canReusePrefetch =
+        galleryPrefetch &&
+        finalEn.length > 0 &&
+        prefetchEn.length > 0 &&
+        finalEn === prefetchEn;
+
+      if (canReusePrefetch) {
+        const gallery = await galleryPrefetch;
+        imageUrls = gallery.urls;
+        imageProvider = gallery.provider;
+      } else {
+        const primaryCtx = isValidImageSearchCommonName(searchQueryEn)
           ? buildSpeciesImageSearchContext({
-              userQuery: imageFallbackQuery,
+              userQuery: query,
               scientificName: payload.scientificName,
-              searchQueryEn: fallbackSearchQueryEn,
+              searchQueryEn,
             })
           : null;
-
-      const gallery =
-        primaryCtx || fallbackCtx
-          ? await resolveSpeciesGalleryWithFallback(
-              {
-                userQuery: query,
+        const fallbackCtx =
+          useImageFallback && isValidImageSearchCommonName(fallbackSearchQueryEn)
+            ? buildSpeciesImageSearchContext({
+                userQuery: imageFallbackQuery,
                 scientificName: payload.scientificName,
-                imageSearchContext: primaryCtx ?? fallbackCtx!,
-              },
-              fallbackCtx &&
-                primaryCtx &&
-                fallbackCtx.searchQueryEn.trim().toLowerCase() !==
-                  primaryCtx.searchQueryEn.trim().toLowerCase()
-                ? fallbackCtx
-                : null,
-            )
-          : { urls: [], provider: null };
-      imageUrls = gallery.urls;
-      imageProvider = gallery.provider;
+                searchQueryEn: fallbackSearchQueryEn,
+              })
+            : null;
+
+        const gallery =
+          primaryCtx || fallbackCtx
+            ? await resolveSpeciesGalleryWithFallback(
+                {
+                  userQuery: query,
+                  scientificName: payload.scientificName,
+                  imageSearchContext: primaryCtx ?? fallbackCtx!,
+                },
+                fallbackCtx &&
+                  primaryCtx &&
+                  fallbackCtx.searchQueryEn.trim().toLowerCase() !==
+                    primaryCtx.searchQueryEn.trim().toLowerCase()
+                  ? fallbackCtx
+                  : null,
+              )
+            : { urls: [], provider: null };
+        imageUrls = gallery.urls;
+        imageProvider = gallery.provider;
+      }
     } catch {
       imageUrls = [];
       imageProvider = null;

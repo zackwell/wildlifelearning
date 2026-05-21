@@ -282,7 +282,9 @@ export function ExploreAnimals() {
       json = raw ? (JSON.parse(raw) as ApiJson) : {};
     } catch {
       throw new Error(
-        `服务器返回了非 JSON 响应（HTTP ${res.status}）。请查看终端/部署日志，或确认接口未崩溃。`,
+        res.status === 504
+          ? "生成超时（HTTP 504）：图鉴生成超过服务器 120 秒限制。请稍后重试，或联系管理员将 Nginx proxy_read_timeout 调至 300s。"
+          : `服务器返回了非 JSON 响应（HTTP ${res.status}）。请查看终端/部署日志，或确认接口未崩溃。`,
       );
     }
 
