@@ -308,6 +308,17 @@ export async function resolveSpeciesWikiAnchor(userQuery: string): Promise<Speci
     try {
       const baidu = await resolveBaiduBaikeSpecies(q);
       if (baidu) return anchorFromBaidu(q, alias, baidu);
+      if (alias) {
+        const titles = [alias.modernZh, ...alias.wikiTitles];
+        const seen = new Set<string>([q]);
+        for (const t of titles) {
+          const key = t.trim();
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          const alt = await resolveBaiduBaikeSpecies(key);
+          if (alt) return anchorFromBaidu(q, alias, { ...alt, title: key });
+        }
+      }
     } catch (e) {
       if (process.env.BAIDU_DEBUG === "1") {
         console.warn("[species-anchor] baidu error", q, e);

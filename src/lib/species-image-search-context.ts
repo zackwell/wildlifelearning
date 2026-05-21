@@ -20,6 +20,8 @@ export type SpeciesImageSearchContext = {
   /** 大模型译出的英文俗名（或用户直接输入的英文） */
   searchQueryEn: string;
   scientificName: string;
+  /** 分类/taxon 文本（纲目科属或百科分类概要），用于推断搜图类群 */
+  taxon?: string;
 };
 
 /**
@@ -59,14 +61,17 @@ export function buildSpeciesImageSearchContext(opts: {
   userQuery: string;
   scientificName: string;
   searchQueryEn: string;
+  taxon?: string | null;
 }): SpeciesImageSearchContext {
-  const ctx = {
+  const ctx: SpeciesImageSearchContext = {
     nameZh: opts.userQuery.trim(),
     searchQueryEn: opts.searchQueryEn.trim(),
     scientificName: opts.scientificName.trim(),
   };
+  const taxon = opts.taxon?.trim();
+  if (taxon) ctx.taxon = taxon;
   if (process.env.UNSPLASH_DEBUG === "1") {
-    console.warn("[species-image] search query", JSON.stringify(ctx));
+    console.warn("[species-image] search context", JSON.stringify(ctx));
   }
   return ctx;
 }

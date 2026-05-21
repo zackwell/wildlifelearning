@@ -67,6 +67,20 @@ const ALIASES: Record<string, SpeciesNameAlias> = {
       "「羚牛」即扭角羚（Budorcas taxicolor），中国西部高山有分布。应撰写羚牛完整科普；JSON 的 name 仍填用户输入。禁止写成欧洲野牛、角马或其他牛科动物。",
     scientificNameHint: "Budorcas taxicolor",
   },
+  独角仙: {
+    modernZh: "独角仙",
+    wikiTitles: ["双叉犀金龟", "独角仙"],
+    note:
+      "「独角仙」是真实存在的昆虫，即双叉犀金龟（Allomyrina dichotoma，金龟子科），「兜虫」为其别称。这是鞘翅目甲虫，不是神话或虚构生物。应撰写完整昆虫图鉴；JSON 的 name 仍填「独角仙」，禁止写「虚构」「不存在于现实」或改成其他物种。",
+    scientificNameHint: "Allomyrina dichotoma",
+  },
+  兜虫: {
+    modernZh: "独角仙",
+    wikiTitles: ["双叉犀金龟", "独角仙"],
+    note:
+      "「兜虫」通常指独角仙（双叉犀金龟，Allomyrina dichotoma），为真实昆虫。应撰写完整科普；JSON 的 name 仍填用户输入。",
+    scientificNameHint: "Allomyrina dichotoma",
+  },
 };
 
 export function resolveSpeciesNameAlias(query: string): SpeciesNameAlias | null {

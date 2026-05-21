@@ -4,6 +4,7 @@ import {
   speciesImageStrictAnimalFilter,
 } from "@/lib/species-image-relevance";
 import type { SpeciesImageSearchContext } from "@/lib/species-image-search-context";
+import { buildUnsplashSearchQueryFromContext } from "@/lib/species-image-search-taxonomy";
 
 const UNSPLASH_FETCH_MS = 12_000;
 
@@ -58,11 +59,18 @@ function httpSignal(ms: number): AbortSignal | undefined {
   return undefined;
 }
 
-/** 单一英文检索串 */
+/** 按类群拼接英文检索串（见 species-image-search-taxonomy） */
 function buildUnsplashQuery(ctx: SpeciesImageSearchContext): string | null {
-  const en = ctx.searchQueryEn.trim();
-  if (!en || /[\u4e00-\u9fff]/.test(en)) return null;
-  return `${en} wildlife animal`.slice(0, 120);
+  const { query, group } = buildUnsplashSearchQueryFromContext({
+    nameZh: ctx.nameZh,
+    taxon: ctx.taxon,
+    scientificName: ctx.scientificName,
+    searchQueryEn: ctx.searchQueryEn,
+  });
+  if (process.env.UNSPLASH_DEBUG === "1" && query) {
+    console.warn("[species-image][unsplash] taxon group", group, "query=", query);
+  }
+  return query || null;
 }
 
 async function resolveUnsplashSpeciesImages(

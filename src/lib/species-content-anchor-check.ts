@@ -59,6 +59,7 @@ function isPlaceholderTaxon(value: string): boolean {
 
 function anchorHasVerifiedIdentity(anchor: SpeciesWikiAnchor | null): boolean {
   if (!anchor) return false;
+  if (anchor.identityNote && anchor.scientificNameHint) return true;
   if (anchor.resolvedTaxon?.scientificName) return true;
   if (anchor.scientificNameHint && !isPlaceholderScientificName(anchor.scientificNameHint)) {
     return true;
@@ -169,4 +170,34 @@ export function detectAnchorContentMismatch(
   }
 
   return null;
+}
+
+const FICTIONAL_DENIAL_RE =
+  /虚构|神话(?:中的)?生物|不存在于现实|并非真实(?:存在)?的?(?:动物|生物)|不是真实(?:存在)?的?(?:动物|生物)|没有这种动物|仅为(?:传说|神话)|游戏(?:或|、)动漫|宝可梦|数码宝贝|口袋妖怪/i;
+
+/**
+ * 百科/别名已确认真实物种，但模型误判为虚构时触发重试。
+ */
+export function detectFictionalSpeciesDenial(
+  payload: ExploreSpeciesPayload,
+  anchor: SpeciesWikiAnchor | null,
+): AnchorContentMismatch | null {
+  if (!anchorHasVerifiedIdentity(anchor)) return null;
+
+  const blob = [payload.summary, payload.bodyMarkdown, payload.scientificName, payload.taxon].join(
+    "\n",
+  );
+  if (!FICTIONAL_DENIAL_RE.test(blob)) return null;
+
+  const hint =
+    anchor?.identityNote ??
+    anchor?.scientificNameHint ??
+    anchor?.zhTitle ??
+    anchor?.userQuery ??
+    "已锚定物种";
+
+  return {
+    reason: "模型将已锚定的真实物种误判为虚构生物。",
+    retryHint: `上次输出称「${anchor?.userQuery ?? ""}」为虚构/神话/不存在的生物，这与系统已确认的真实物种身份矛盾。\n【系统已确认】${hint}\n请按真实昆虫/动物撰写完整图鉴 JSON；name 仍填用户输入；禁止写「虚构」「神话」「不存在于现实」。`,
+  };
 }

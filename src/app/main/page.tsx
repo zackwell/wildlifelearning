@@ -9,7 +9,7 @@ export default function MainHubPage() {
           探索你感兴趣的动物，建立个人图鉴
         </h1>
         <p className="mt-4 max-w-2xl text-lg text-stone-700/90 dark:text-stone-200/85">
-          图鉴包含物种分布、习性、身体结构等内容，生成后可共学习使用，自动生成题库。智能助手可查缺补漏将您想了解的内容补充到图鉴中。
+          图鉴包含物种分布、习性、身体结构等内容，生成后可供学习使用，自动生成题库。智能助手可查缺补漏将您想了解的内容补充到图鉴中。
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
