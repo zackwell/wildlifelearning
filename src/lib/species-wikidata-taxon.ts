@@ -1,3 +1,5 @@
+import { isLikelyScientificName } from "@/lib/species-image-search-context";
+
 const UA =
   "WildlifeLearning/1.0 (educational wildlife site; contact via project maintainer)";
 
@@ -33,6 +35,8 @@ export type ResolvedTaxonIdentity = {
   scientificName: string | null;
   labelZh: string | null;
   labelEn: string | null;
+  /** Wikidata P1843 英文俗名 */
+  englishVernacularNames: string[];
   lineage: TaxonLineageNode[];
 };
 
@@ -64,6 +68,47 @@ function claimEntityId(entity: WbEntity, prop: string): string | null {
 function labelOf(entity: WbEntity, lang: "zh" | "en"): string | null {
   const v = entity.labels?.[lang]?.value?.trim();
   return v || null;
+}
+
+function claimMonolingualTexts(entity: WbEntity, prop: string, lang: string): string[] {
+  const claims = entity.claims?.[prop] ?? [];
+  const out: string[] = [];
+  for (const claim of claims) {
+    const value = claim.mainsnak?.datavalue?.value as
+      | { text?: string; language?: string }
+      | undefined;
+    const text = value?.text?.trim();
+    if (value?.language === lang && text) out.push(text);
+  }
+  return out;
+}
+
+function normalizeScientificName(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function englishVernacularNamesFromEntity(entity: WbEntity): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const push = (value: string | null | undefined) => {
+    const t = value?.trim();
+    if (!t) return;
+    const key = t.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(t);
+  };
+
+  for (const name of claimMonolingualTexts(entity, "P1843", "en")) {
+    push(name);
+  }
+
+  const labelEn = labelOf(entity, "en");
+  if (labelEn && !isLikelyScientificName(labelEn)) {
+    push(labelEn);
+  }
+
+  return out;
 }
 
 async function fetchEntities(ids: string[]): Promise<Record<string, WbEntity>> {
@@ -142,8 +187,54 @@ export async function resolveTaxonFromWikidata(
     scientificName: claimString(root, "P225"),
     labelZh: labelOf(root, "zh"),
     labelEn: labelOf(root, "en"),
+    englishVernacularNames: englishVernacularNamesFromEntity(root),
     lineage,
   };
+}
+
+/** 按学名在 Wikidata 检索英文俗名（P1843），用于搜图翻译校验。 */
+export async function resolveEnglishVernacularNamesByScientificName(
+  scientificName: string,
+): Promise<string[]> {
+  const sci = scientificName.trim();
+  if (!sci || /^未知|unknown|n\/a/i.test(sci)) return [];
+
+  const url = new URL("https://www.wikidata.org/w/api.php");
+  url.searchParams.set("action", "wbsearchentities");
+  url.searchParams.set("search", sci);
+  url.searchParams.set("language", "en");
+  url.searchParams.set("type", "item");
+  url.searchParams.set("limit", "5");
+  url.searchParams.set("format", "json");
+
+  try {
+    const res = await fetch(url.toString(), {
+      headers: { "User-Agent": UA, Accept: "application/json" },
+      cache: "no-store",
+      signal: httpSignal(),
+    });
+    if (!res.ok) return [];
+    const j = (await res.json()) as {
+      search?: Array<{ id?: string; label?: string }>;
+    };
+    const target = normalizeScientificName(sci);
+    const ids = (j.search ?? [])
+      .map((hit) => hit.id)
+      .filter((id): id is string => typeof id === "string" && /^Q\d+$/.test(id));
+
+    for (const id of ids.slice(0, 3)) {
+      const entities = await fetchEntities([id]);
+      const entity = entities[id];
+      if (!entity) continue;
+      const entitySci = claimString(entity, "P225");
+      if (!entitySci || normalizeScientificName(entitySci) !== target) continue;
+      return englishVernacularNamesFromEntity(entity);
+    }
+  } catch {
+    return [];
+  }
+
+  return [];
 }
 
 /** 从 lineage 提取用于校验的关键拉丁类群名（科、目等） */

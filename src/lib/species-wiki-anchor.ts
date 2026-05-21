@@ -182,9 +182,9 @@ async function resolveEnWikiTitleFromZh(zhTitle: string): Promise<string | null>
 }
 
 function anchorSourceMode(): "baidu" | "wiki" | "baidu_first" {
-  const v = (process.env.SPECIES_ANCHOR_SOURCE ?? "baidu_first").trim().toLowerCase();
+  const v = (process.env.SPECIES_ANCHOR_SOURCE ?? "baidu").trim().toLowerCase();
   if (v === "wiki" || v === "baidu" || v === "baidu_first") return v;
-  return "baidu_first";
+  return "baidu";
 }
 
 function anchorFromBaidu(

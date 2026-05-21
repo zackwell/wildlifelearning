@@ -61,28 +61,59 @@ function stripTags(html: string): string {
     .trim();
 }
 
-function extractBinomial(text: string): string | null {
+function extractEnglishName(text: string): string | null {
   const patterns = [
-    /拉丁学名\s*[：:]?\s*([A-Z][a-z]+\s+[a-z]+(?:\s+[a-z]+)?)/,
-    /（\s*([A-Z][a-z]+\s+[a-z]+)\s*）/,
-    /\(\s*([A-Z][a-z]+\s+[a-z]+)\s*\)/,
-    /([A-Z][a-z]+\s+[a-z]+)\s*[（(][A-Za-z .,]+182\d/i,
+    /外文名\s*[：:]?\s*([^，,；;\n]{2,80})/,
+    /英文(?:名|名称|俗名)\s*[：:]?\s*([^，,；;\n]{2,80})/,
+    /英文名称\s*([A-Za-z][A-Za-z\s-]{2,40})/,
   ];
   for (const re of patterns) {
     const m = text.match(re);
-    if (m?.[1] && m[1].length >= 8 && m[1].length < 60) {
-      return m[1].replace(/\s+/g, " ").trim();
+    if (!m?.[1]) continue;
+    const segment = m[1];
+    const englishParts = [...segment.matchAll(/\b([A-Za-z][A-Za-z\s-]{2,30})\b/g)];
+    for (const part of englishParts) {
+      const raw = part[1]?.trim().replace(/\s+/g, " ");
+      if (raw && raw.length >= 3) return raw;
     }
   }
   return null;
 }
 
-function extractEnglishName(text: string): string | null {
-  const m = text.match(/外文名\s*[：:]?\s*([A-Za-z][A-Za-z\s-]{2,40})/);
-  if (!m?.[1]) return null;
-  const raw = m[1].split(/[，,、]/)[0]?.trim();
-  if (!raw || raw.length < 3) return null;
-  return raw.replace(/\s+/g, " ");
+function isFamilyOrHigherTaxon(name: string): boolean {
+  const token = name.trim().split(/\s+/).pop() ?? name.trim();
+  return /(?:idae|inae|oidea|inae|ota|phyta|mycota)$/i.test(token);
+}
+
+function extractBinomial(text: string): string | null {
+  const patterns = [
+    /拉丁学名\s*[：:]?\s*([A-Z][a-z]+(?:\s+[a-z]+)?(?:\s+[a-z]+)?)/,
+    /（\s*([A-Z][a-z]+\s+[a-z]+)\s*）/,
+    /\(\s*([A-Z][a-z]+\s+[a-z]+)\s*\)/,
+    /([A-Z][a-z]+\s+[a-z]+)\s*[（(][A-Za-z .,]+182\d/i,
+  ];
+  let familyLevel: string | null = null;
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m?.[1]) continue;
+    const candidate = m[1].replace(/\s+/g, " ").trim();
+    if (candidate.length < 8 || candidate.length >= 60) continue;
+    if (isFamilyOrHigherTaxon(candidate)) {
+      familyLevel ??= candidate;
+      continue;
+    }
+    return candidate;
+  }
+
+  const speciesInText = [...text.matchAll(/\b([A-Z][a-z]+\s+[a-z]+)\b/g)]
+    .map((m) => m[1]?.replace(/\s+/g, " ").trim())
+    .filter((name): name is string => {
+      if (!name || name.length < 8 || name.length >= 60) return false;
+      return !isFamilyOrHigherTaxon(name);
+    });
+  if (speciesInText[0]) return speciesInText[0];
+
+  return familyLevel;
 }
 
 function extractTaxonBrief(text: string): string | null {
