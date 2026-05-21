@@ -324,15 +324,16 @@ export async function POST(req: Request) {
     const preliminarySearchQueryEn = searchQueryEn;
     let galleryPrefetch: ReturnType<typeof resolveSpeciesGalleryWithFallback> | null = null;
     if (isValidImageSearchCommonName(preliminarySearchQueryEn)) {
+      const prefetchSci = imageSciHint ?? "";
       const prefetchCtx = buildSpeciesImageSearchContext({
         userQuery: query,
-        scientificName: imageSciHint,
+        scientificName: prefetchSci,
         searchQueryEn: preliminarySearchQueryEn!,
       });
       galleryPrefetch = resolveSpeciesGalleryWithFallback(
         {
           userQuery: query,
-          scientificName: imageSciHint,
+          scientificName: prefetchSci,
           imageSearchContext: prefetchCtx,
         },
         null,
@@ -488,7 +489,7 @@ export async function POST(req: Request) {
         prefetchEn.length > 0 &&
         finalEn === prefetchEn;
 
-      if (canReusePrefetch) {
+      if (canReusePrefetch && galleryPrefetch) {
         const gallery = await galleryPrefetch;
         imageUrls = gallery.urls;
         imageProvider = gallery.provider;
