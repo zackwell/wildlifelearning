@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type SessionUser = {
@@ -12,12 +12,14 @@ type SessionUser = {
 
 export function AuthHeaderActions() {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     (async () => {
       try {
         const res = await fetch("/api/auth/session", { credentials: "same-origin" });
@@ -32,7 +34,7 @@ export function AuthHeaderActions() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pathname]);
 
   async function onLogout() {
     setLoggingOut(true);

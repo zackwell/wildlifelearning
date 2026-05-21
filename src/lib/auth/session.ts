@@ -38,9 +38,14 @@ export async function deleteSessionByToken(token: string): Promise<void> {
 }
 
 export function sessionCookieOptions(maxAgeSec: number) {
+  const secure =
+    process.env.SESSION_COOKIE_SECURE === "true" ||
+    (process.env.SESSION_COOKIE_SECURE !== "false" &&
+      (process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://") ?? false));
+
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure,
     sameSite: "lax" as const,
     path: "/",
     maxAge: maxAgeSec,

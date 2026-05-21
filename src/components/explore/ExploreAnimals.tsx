@@ -472,7 +472,7 @@ export function ExploreAnimals() {
     <section className="rounded-3xl border border-sky-900/10 bg-gradient-to-br from-sky-50 to-white p-8 shadow-sm dark:border-sky-100/10 dark:from-sky-950 dark:to-sky-950/40">
       <h2 className="text-xl font-semibold text-sky-950 dark:text-sky-50">探索动物</h2>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-sky-900/85 dark:text-sky-100/85">
-        建议输入精确到种的常用名或拉丁学名（如「羚牛」而非易混的「牛羚」）。内容为 AI 生成，
+        建议输入精确到种的常用名或拉丁学名。内容为 AI 生成，
         <strong className="font-semibold">较冷门物种配图可能不准确或缺失，可上传自己的图片，注意甄别。</strong>
       </p>
 

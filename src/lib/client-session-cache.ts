@@ -42,13 +42,15 @@ export type LiteratureDocSnapshot = {
 };
 
 function createStore<T extends object>(initial: T) {
-  let state = initial;
+  const state = { ...initial };
+  let snapshot: T = { ...initial };
   const listeners = new Set<() => void>();
 
   return {
-    get: (): T => state,
+    get: (): T => snapshot,
     patch: (patch: Partial<T>): void => {
       Object.assign(state, patch);
+      snapshot = { ...state } as T;
       listeners.forEach((listener) => listener());
     },
     subscribe: (listener: () => void) => {
