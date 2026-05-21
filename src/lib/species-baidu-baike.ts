@@ -293,7 +293,11 @@ function extractSummary(introParagraphs: string[], title: string): string {
 
 function parseLemmaHtml(html: string, query: string): BaiduBaikeSpecies | null {
   if (html.length < 500) return null;
+  if (isBaiduBlockedPage(html)) return null;
   if (!html.includes(query) && !html.toLowerCase().includes(query.toLowerCase())) {
+    if (process.env.BAIDU_DEBUG === "1") {
+      console.warn("[baidu-baike] HTML missing query token", query);
+    }
     return null;
   }
 
@@ -336,28 +340,58 @@ function parseLemmaHtml(html: string, query: string): BaiduBaikeSpecies | null {
   };
 }
 
+function isBaiduBlockedPage(html: string): boolean {
+  if (/百度安全验证|安全验证|请输入验证码|网络不给力|请刷新重试|访问受限/i.test(html)) {
+    return true;
+  }
+  if (html.length > 800 && !/lemma-summary|J-lemma-content|百度百科/.test(html)) {
+    return true;
+  }
+  return false;
+}
+
 async function fetchLemmaHtml(keyword: string): Promise<string | null> {
+  const encoded = encodeURIComponent(keyword);
+  const compact = encodeURIComponent(keyword.replace(/\s+/g, ""));
   const urls = [
-    `https://baike.baidu.com/item/${encodeURIComponent(keyword)}`,
-    `https://baike.baidu.com/item/${encodeURIComponent(keyword.replace(/\s+/g, ""))}`,
+    `https://baike.baidu.com/item/${encoded}`,
+    `https://baike.baidu.com/item/${compact}`,
+    `https://m.baike.baidu.com/item/${encoded}`,
+    `https://m.baike.baidu.com/item/${compact}`,
   ];
   for (const url of urls) {
     try {
       const res = await fetch(url, {
         headers: {
           "User-Agent": UA,
-          Accept: "text/html,application/xhtml+xml",
-          "Accept-Language": "zh-CN,zh;q=0.9",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+          Referer: "https://baike.baidu.com/",
+          "Cache-Control": "no-cache",
         },
         cache: "no-store",
         signal: httpSignal(),
         redirect: "follow",
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        if (process.env.BAIDU_DEBUG === "1") {
+          console.warn("[baidu-baike] HTTP", res.status, url);
+        }
+        continue;
+      }
       const html = await res.text();
-      if (html.length > 500) return html;
-    } catch {
-      /* try next */
+      if (html.length < 500) continue;
+      if (isBaiduBlockedPage(html)) {
+        if (process.env.BAIDU_DEBUG === "1") {
+          console.warn("[baidu-baike] blocked or captcha page", keyword, url);
+        }
+        continue;
+      }
+      return html;
+    } catch (e) {
+      if (process.env.BAIDU_DEBUG === "1") {
+        console.warn("[baidu-baike] fetch error", keyword, url, e);
+      }
     }
   }
   return null;
@@ -371,9 +405,18 @@ export async function resolveBaiduBaikeSpecies(query: string): Promise<BaiduBaik
   if (!q || q.length > 40) return null;
 
   const html = await fetchLemmaHtml(q);
-  if (!html) return null;
+  if (!html) {
+    if (process.env.BAIDU_DEBUG === "1") {
+      console.warn("[baidu-baike] no HTML for", q);
+    }
+    return null;
+  }
 
-  return parseLemmaHtml(html, q);
+  const parsed = parseLemmaHtml(html, q);
+  if (!parsed && process.env.BAIDU_DEBUG === "1") {
+    console.warn("[baidu-baike] parse failed for", q);
+  }
+  return parsed;
 }
 
 /** 百度百科「本词条是一个多义词」消歧页（非具体物种条目） */

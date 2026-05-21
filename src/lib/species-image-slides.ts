@@ -78,6 +78,7 @@ export function isUnsplashCdn(url: string): boolean {
   }
 }
 
+/** Unsplash 直连 CDN，不经 /_next/image，减轻服务器代理与压缩开销。 */
 export function canUseNextImageForUrl(url: string): boolean {
-  return isWikimediaUpload(url) || isUnsplashCdn(url);
+  return isWikimediaUpload(url);
 }

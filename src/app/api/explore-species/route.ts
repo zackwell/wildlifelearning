@@ -101,7 +101,10 @@ export async function POST(req: Request) {
   try {
     const ip = clientIp(req);
     if (!allowRate(ip)) {
-      return NextResponse.json({ error: "请求过于频繁，请稍后再试。" }, { status: 429 });
+      return NextResponse.json(
+        { error: "请求过于频繁，请稍后再试（每分钟最多 10 次）。连续测试时请间隔 1 分钟。" },
+        { status: 429 },
+      );
     }
 
     let body: {
@@ -357,18 +360,26 @@ export async function POST(req: Request) {
     }
 
     let payload = parseExploreSpeciesJson(parsed, parseOpts);
+    let lastParsed: unknown = parsed;
     if (!payload) {
       for (const temp of [0.2, 0.15] as const) {
         try {
           const retryText = await runCompletion(temp, parseRetryHint);
           if (!retryText) continue;
           const retryParsed = extractJsonObject(retryText);
+          lastParsed = retryParsed;
           payload = parseExploreSpeciesJson(retryParsed, parseOpts);
           if (payload) break;
         } catch {
           /* 尝试下一次重试 */
         }
       }
+    }
+    /* 百科详图鉴标准未过审时，降级为默认篇幅，避免云服务器 LLM 略短时直接 502 */
+    if (!payload && richBaiduRef) {
+      payload =
+        parseExploreSpeciesJson(lastParsed, { detailLevel: "default" }) ??
+        parseExploreSpeciesJson(parsed, { detailLevel: "default" });
     }
     if (!payload) {
       return NextResponse.json(

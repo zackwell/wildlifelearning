@@ -41,11 +41,11 @@ function pickUnsplashPhotoUrl(item: {
   const urls = item.urls;
   const raw =
     urls?.regular ??
-    urls?.full ??
     urls?.small ??
     urls?.thumb ??
+    urls?.full ??
     (typeof urls?.raw === "string"
-      ? `${urls.raw.split("?")[0]}?w=1200&q=80`
+      ? `${urls.raw.split("?")[0]}?w=1080&q=80`
       : undefined);
   if (typeof raw === "string" && raw.startsWith("https://")) return raw;
   return null;

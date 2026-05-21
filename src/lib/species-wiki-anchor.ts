@@ -308,8 +308,10 @@ export async function resolveSpeciesWikiAnchor(userQuery: string): Promise<Speci
     try {
       const baidu = await resolveBaiduBaikeSpecies(q);
       if (baidu) return anchorFromBaidu(q, alias, baidu);
-    } catch {
-      /* fall through */
+    } catch (e) {
+      if (process.env.BAIDU_DEBUG === "1") {
+        console.warn("[species-anchor] baidu error", q, e);
+      }
     }
     if (mode === "baidu") return base;
   }
