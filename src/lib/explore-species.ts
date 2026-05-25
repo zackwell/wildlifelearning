@@ -1,8 +1,6 @@
 import { jsonrepair } from "jsonrepair";
 import { normalizeModelMarkdown } from "@/lib/normalize-model-markdown";
 import { normalizeSpeciesTaxon } from "@/lib/species-taxon-normalize";
-import type { SpeciesWikiAnchor } from "@/lib/species-wiki-anchor";
-
 export type FieldGuideQuizItem = {
   question: string;
   options: [string, string, string, string];
@@ -223,53 +221,6 @@ export function parseExploreSpeciesJson(
   }
 
   return payload;
-}
-
-/**
- * 强制图鉴「显示名」与用户输入一致（保留生僻字/异体字），并在模型擅自换成其他物种时加注说明。
- */
-export function enforceUserQuerySpeciesName(
-  payload: ExploreSpeciesPayload,
-  userQuery: string,
-  anchor: SpeciesWikiAnchor | null,
-): ExploreSpeciesPayload {
-  const q = userQuery.trim();
-  if (!q) return payload;
-
-  const modelName = payload.name.trim();
-  if (modelName === q) return payload;
-
-  const likelySubstitution =
-    modelName.length > 0 &&
-    modelName !== q &&
-    !modelName.includes(q) &&
-    !q.includes(modelName);
-
-  let summary = payload.summary;
-  if (likelySubstitution) {
-    summary =
-      `【说明】您搜索的是「${q}」。初稿中的名称「${modelName}」与输入不一致，已改回您输入的字形；若正文仍描述其他动物，请核对异体字或重试。\n\n${summary}`;
-  } else {
-    summary = `【说明】显示名已统一为您输入的「${q}」。\n\n${summary}`;
-  }
-
-  let scientificName = payload.scientificName;
-  if (likelySubstitution && anchor?.scientificNameHint) {
-    scientificName = anchor.scientificNameHint;
-  }
-
-  let reportSearchQuery = payload.reportSearchQuery;
-  if (anchor?.scientificNameHint && !reportSearchQuery.includes(anchor.scientificNameHint.split(" ")[0] ?? "")) {
-    reportSearchQuery = `${anchor.scientificNameHint} ${q}`.trim().slice(0, 280);
-  }
-
-  return {
-    ...payload,
-    name: q,
-    summary,
-    scientificName,
-    reportSearchQuery,
-  };
 }
 
 /** 去掉模型偶发包裹的思考块、前缀等 */

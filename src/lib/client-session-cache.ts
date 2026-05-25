@@ -15,11 +15,18 @@ export type ExploreDraftSnapshot = {
 export type ExplorePreviewSnapshot = Pick<
   ExploreDraftSnapshot,
   "data" | "galleryEditedUrls" | "saveHint"
->;
+> & {
+  /** 当前预览物种已保存的图鉴条目 id（防重复点击） */
+  savedEntryId: string | null;
+};
 
 export type AskDraftSnapshot = {
   fieldGuideKey: string;
   question: string;
+  /** 提交时按图鉴物种补全后的问题（供展示与并入图鉴） */
+  resolvedQuestion: string;
+  /** 已匹配图鉴物种中文名 */
+  speciesName: string;
   result: {
     answer: string;
     citations: Array<{
@@ -82,11 +89,16 @@ const explorePreviewStore = createStore<ExplorePreviewSnapshot>({
   data: null,
   galleryEditedUrls: null,
   saveHint: null,
+  savedEntryId: null,
 });
 
 const askInputStore = createStore<AskInputSnapshot>({
   fieldGuideKey: "",
   question: "",
+});
+const askMetaStore = createStore<Pick<AskDraftSnapshot, "resolvedQuestion" | "speciesName">>({
+  resolvedQuestion: "",
+  speciesName: "",
 });
 const askResultStore = createStore<Pick<AskDraftSnapshot, "result">>({ result: null });
 
@@ -177,7 +189,7 @@ export function useExploreDraft(): ExploreDraftSnapshot {
 }
 
 export function getAskDraft(): AskDraftSnapshot {
-  return { ...askInputStore.get(), ...askResultStore.get() };
+  return { ...askInputStore.get(), ...askMetaStore.get(), ...askResultStore.get() };
 }
 
 export function patchAskInput(patch: Partial<AskInputSnapshot>): void {
@@ -189,11 +201,17 @@ export function patchAskResult(patch: Partial<Pick<AskDraftSnapshot, "result">>)
 }
 
 export function patchAskDraft(patch: Partial<AskDraftSnapshot>): void {
-  const { fieldGuideKey, question, result } = patch;
+  const { fieldGuideKey, question, resolvedQuestion, speciesName, result } = patch;
   if (fieldGuideKey !== undefined || question !== undefined) {
     askInputStore.patch({
       ...(fieldGuideKey !== undefined ? { fieldGuideKey } : {}),
       ...(question !== undefined ? { question } : {}),
+    });
+  }
+  if (resolvedQuestion !== undefined || speciesName !== undefined) {
+    askMetaStore.patch({
+      ...(resolvedQuestion !== undefined ? { resolvedQuestion } : {}),
+      ...(speciesName !== undefined ? { speciesName } : {}),
     });
   }
   if (result !== undefined) askResultStore.patch({ result });
@@ -216,9 +234,11 @@ export function useAskDraft(): AskDraftSnapshot {
   return useSyncExternalStore(
     (listener) => {
       const unsubInput = askInputStore.subscribe(listener);
+      const unsubMeta = askMetaStore.subscribe(listener);
       const unsubResult = askResultStore.subscribe(listener);
       return () => {
         unsubInput();
+        unsubMeta();
         unsubResult();
       };
     },

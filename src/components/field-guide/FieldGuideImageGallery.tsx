@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSwipeCarousel } from "@/lib/use-swipe-carousel";
 import { canUseNextImageForUrl, isUserUploadedImage } from "@/lib/species-image-slides";
 
 const CAROUSEL_MS = 4500;
@@ -54,6 +55,21 @@ export function FieldGuideImageGallery({ slides, alt, coverUrl, onSetCover, onRe
     }
   }, [idx]);
 
+  const goPrev = useCallback(
+    () => setIdx((i) => (i - 1 + slides.length) % slides.length),
+    [slides.length],
+  );
+  const goNext = useCallback(
+    () => setIdx((i) => (i + 1) % slides.length),
+    [slides.length],
+  );
+  const swipe = useSwipeCarousel({
+    enabled: slides.length > 1,
+    onPrev: goPrev,
+    onNext: goNext,
+    onSwipeStart: () => setPaused(true),
+  });
+
   const current = slides[idx] ?? slides[0];
   if (!current) return null;
 
@@ -68,7 +84,11 @@ export function FieldGuideImageGallery({ slides, alt, coverUrl, onSetCover, onRe
     >
       {/* 主图 */}
       <div className="relative min-w-0 flex-1">
-        <div className="relative aspect-[16/10] w-full overflow-hidden rounded-2xl border border-emerald-900/10 bg-emerald-100/60 dark:border-emerald-100/10 dark:bg-emerald-900/30">
+        <div
+          className="relative aspect-[16/10] w-full touch-pan-y overflow-hidden rounded-2xl border border-emerald-900/10 bg-emerald-100/60 dark:border-emerald-100/10 dark:bg-emerald-900/30"
+          onTouchStart={swipe.onTouchStart}
+          onTouchEnd={swipe.onTouchEnd}
+        >
           {useNextImage ? (
             <Image
               src={current}

@@ -1,10 +1,10 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import {
-  enforceUserQuerySpeciesName,
   extractJsonObject,
   parseExploreSpeciesJson,
 } from "@/lib/explore-species";
+import { applyCanonicalSpeciesDisplayName } from "@/lib/species-display-name";
 import { resolveSpeciesNameAlias } from "@/lib/species-name-aliases";
 import {
   buildExploreSpeciesUserPrompt,
@@ -74,11 +74,12 @@ function resolveBaseUrl(): string | undefined {
 const SYSTEM = `你是野生动物科普作者。用户会提供一个动物中文名或常用名（含生僻字、异体字、古籍用字）。请生成「个人图鉴」JSON 草稿：语气科普、审慎。
 
 物种身份（最重要）：
-- 必须只写用户指定的那一种动物；JSON 的 name 与用户输入逐字相同，不得改字、不得换成近形字或更常见的物种。
+- 必须只写用户指定的那一种动物；JSON 的 name 用该物种规范中文种名（种级名称，非别称/俗名）。
+- 若用户输入为常用别称或英文俗名（如独角仙→双叉犀金龟、Capybara→水豚），name 填规范中文种名，summary 首句说明别称/英文俗名关系。
 - 不得因不认识某汉字就擅自改答其他鸟兽（例如用户输入罕见字鸟名时，禁止改成䴙䴘、啄木鸟、鹰、鸡等）。
 - 名称含「仙」「神」「龙」等字也可能是真实俗名（如独角仙=双叉犀金龟，真实鞘翅目昆虫），不得判为神话或虚构生物。
-- 若系统给出「物种身份/异名」说明（如某字即今称巨嘴鸟），须按该物种写详实正文，name 仍用用户输入字形；不得写「记载较少」敷衍。
-- 若维基锚定与用户输入冲突且无异名说明，以用户输入为准；不得张冠李戴。
+- 若系统给出「物种身份/异名」说明（如某字即今称巨嘴鸟），须按该物种写详实正文，name 用规范种名；不得写「记载较少」敷衍。
+- 若维基锚定与用户输入冲突且无异名说明，以锚定物种为准撰写正文，name 用规范种名；不得张冠李戴。
 - 资料充分时尽量写详：突出该物种相对近缘种或易混种的差异，让读者看出「为什么是这一种」。
 - 资料稀少或文献记载不一时：仍须填满各字段，用较短段落如实写「尚不明确」「记载较少」「待进一步核实」，不要空白或一句话敷衍整个字段；不要为凑长度编造具体数据、法规条款或新闻。
 - 配图由系统另行从图库检索，与正文生成无关；即使最终无配图，也须按可靠生物学知识写详实正文，禁止以「无图」「找不到照片」为由整篇写「记载较少」或敷衍。
@@ -261,6 +262,7 @@ export async function POST(req: Request) {
         englishCommonName: null,
         taxonBrief: null,
         referenceBody: null,
+        canonicalDisplayName: nameAlias?.canonicalZh?.trim() ?? null,
       };
 
     const userPrompt = buildExploreSpeciesUserPrompt(
@@ -301,12 +303,12 @@ export async function POST(req: Request) {
 - bodyStructureMarkdown / habitsMarkdown 各至少 2 个小标题
 - funFactsMarkdown 写 2–4 条冷知识
 - taxon 须含纲/目/科/属/种五级；habitat / diet / conservation 写具体
-- name 须与用户输入「${query}」完全一致`
+- name 须填规范中文种名${genericOverview ? `「${query}」` : anchorForPrompt.canonicalDisplayName ? `「${anchorForPrompt.canonicalDisplayName}」` : "（与用户所指物种一致）"}`
       : `【重要】上次 JSON 未通过系统校验（字段过短、taxon 缺少纲/目/科/属/种层级、或正文过短）。
 请重新输出一个完整 JSON：
 - taxon 须至少含纲、目、科、属、种五级，格式如「纲：鸟纲（Aves）；目：鹤鸵目（Casuariiformes）；科：…」
 - 各 Markdown 字段写实质内容；该物种虽冷门也须据可靠生物学知识撰写，禁止整篇以「记载较少」敷衍
-- name 须与用户输入「${query}」完全一致`;
+- name 须填规范中文种名${genericOverview ? `「${query}」` : anchorForPrompt.canonicalDisplayName ? `「${anchorForPrompt.canonicalDisplayName}」` : "（与用户所指物种一致）"}`;
 
     /* 搜图英译放在长图鉴生成之前，避免 40s+ 长请求后二次 LLM 常返回空（noRaw） */
     let searchQueryEn: string | null = null;
@@ -405,6 +407,19 @@ export async function POST(req: Request) {
       payload =
         parseExploreSpeciesJson(lastParsed, { detailLevel: "default" }) ??
         parseExploreSpeciesJson(parsed, { detailLevel: "default" });
+      if (!payload) {
+        const defaultRetryHint = `【重要】上次 JSON 未达详图鉴标准。请按默认篇幅重新输出完整 JSON（正文可较短，但 taxon 仍须含纲/目/科/属/种五级；bodyMarkdown 至少 2 个 ## 小节）：
+- name 须填规范中文种名${genericOverview ? `「${query}」` : anchorForPrompt.canonicalDisplayName ? `「${anchorForPrompt.canonicalDisplayName}」` : "（与用户所指物种一致）"}`;
+        try {
+          const defaultRetryText = await runCompletion(0.18, defaultRetryHint);
+          if (defaultRetryText) {
+            const defaultRetryParsed = extractJsonObject(defaultRetryText);
+            payload = parseExploreSpeciesJson(defaultRetryParsed, { detailLevel: "default" });
+          }
+        } catch {
+          /* 保留 null，由下方统一 502 */
+        }
+      }
     }
     if (!payload) {
       return NextResponse.json(
@@ -440,33 +455,9 @@ export async function POST(req: Request) {
       }
     }
 
-    const beforeName = payload.name.trim();
-    payload = enforceUserQuerySpeciesName(payload, query, anchor);
-
-    const nameWasWrong =
-      beforeName !== query.trim() &&
-      beforeName.length > 0 &&
-      !beforeName.includes(query) &&
-      !query.includes(beforeName);
-
-    if (nameWasWrong && (anchor?.zhTitle || nameAlias)) {
-      try {
-        const retryText = await runCompletion(0.15);
-        if (retryText) {
-          const retryParsed = extractJsonObject(retryText);
-          const retryPayload = parseExploreSpeciesJson(retryParsed, parseOpts);
-          if (retryPayload) {
-            const retryBefore = retryPayload.name.trim();
-            payload = enforceUserQuerySpeciesName(retryPayload, query, anchor);
-            if (retryBefore !== query.trim() && retryBefore === beforeName) {
-              /* 重试仍错，保留 enforce 后的用户名字 + 说明 */
-            }
-          }
-        }
-      } catch {
-        /* 保留首次结果 */
-      }
-    }
+    payload = applyCanonicalSpeciesDisplayName(payload, query, anchor, nameAlias, {
+      genericGroupOverview: genericOverview,
+    });
 
     searchQueryEn = await resolveImageSearchEnglish(client, chatModel, {
       nameZh: query,
@@ -493,7 +484,8 @@ export async function POST(req: Request) {
         galleryPrefetch &&
         finalEn.length > 0 &&
         prefetchEn.length > 0 &&
-        finalEn === prefetchEn;
+        finalEn === prefetchEn &&
+        !(payload.taxon?.trim() && !imageTaxonHint?.trim());
 
       if (canReusePrefetch && galleryPrefetch) {
         const gallery = await galleryPrefetch;
@@ -502,7 +494,7 @@ export async function POST(req: Request) {
       } else {
         const primaryCtx = isValidImageSearchCommonName(searchQueryEn)
           ? buildSpeciesImageSearchContext({
-              userQuery: query,
+              userQuery: payload.name || query,
               scientificName: payload.scientificName,
               searchQueryEn,
               taxon: payload.taxon || imageTaxonHint,

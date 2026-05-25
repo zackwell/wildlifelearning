@@ -21,6 +21,10 @@ export type AskAnswerData = {
   answer: string;
   citations: AskAnswerCitation[];
   mode: string;
+  rawQuestion?: string;
+  resolvedQuestion?: string;
+  speciesApplied?: boolean;
+  speciesContext?: { name: string; scientificName?: string; slug?: string };
 };
 
 const MODE_HINT: Record<string, string> = {
@@ -39,11 +43,22 @@ const cardClass =
 type Props = {
   result: AskAnswerData;
   question: string;
+  resolvedQuestion: string;
   speciesKey: string;
+  speciesName: string;
+  showSupplementToFieldGuide: boolean;
   onClose: () => void;
 };
 
-export function AskAnswerModal({ result, question, speciesKey, onClose }: Props) {
+export function AskAnswerModal({
+  result,
+  question,
+  resolvedQuestion,
+  speciesKey,
+  speciesName,
+  showSupplementToFieldGuide,
+  onClose,
+}: Props) {
   const [supplementStatus, setSupplementStatus] = useState<string | null>(null);
   const [supplementLoading, setSupplementLoading] = useState(false);
   const [supplementEntryId, setSupplementEntryId] = useState<string | null>(null);
@@ -65,16 +80,20 @@ export function AskAnswerModal({ result, question, speciesKey, onClose }: Props)
     setSupplementStatus(null);
     setSupplementEntryId(null);
 
-    const key = speciesKey.trim();
-    if (!key) {
-      setSupplementStatus("请先在表单中填写「我的图鉴条目」（中文名或 slug），以便匹配你的图鉴。");
+    const lookupKey =
+      speciesKey.trim() ||
+      speciesName.trim() ||
+      result.speciesContext?.name?.trim() ||
+      "";
+    if (!lookupKey) {
+      setSupplementStatus("请先在表单中选择或填写「我的图鉴条目」，以便匹配你的图鉴。");
       return;
     }
 
-    const entry = await findFieldGuideEntryForSpeciesKey(key);
+    const entry = await findFieldGuideEntryForSpeciesKey(lookupKey);
     if (!entry) {
       setSupplementStatus(
-        `未在「我的图鉴」中找到「${key}」。请先在图鉴主页搜索该动物并点击「加入我的图鉴」完成建档，再回来补充。`,
+        `未在「我的图鉴」中找到「${lookupKey}」。请先在图鉴主页搜索该动物并点击「加入我的图鉴」完成建档，再回来补充。`,
       );
       return;
     }
@@ -86,7 +105,7 @@ export function AskAnswerModal({ result, question, speciesKey, onClose }: Props)
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           species: entry.species,
-          question,
+          question: resolvedQuestion.trim() || question,
           answer: result.answer,
         }),
       });
@@ -101,7 +120,7 @@ export function AskAnswerModal({ result, question, speciesKey, onClose }: Props)
         return;
       }
 
-      const mergedSpecies = applySupplementMergePlan(entry.species, plan, question);
+      const mergedSpecies = applySupplementMergePlan(entry.species, plan, resolvedQuestion || question);
       const updated = await updateFieldGuideEntrySpecies(entry.id, mergedSpecies);
       if (!updated) {
         setSupplementStatus("写入图鉴失败，请重试。");
@@ -142,6 +161,11 @@ export function AskAnswerModal({ result, question, speciesKey, onClose }: Props)
               模式：{result.mode}
               {MODE_HINT[result.mode] ? ` — ${MODE_HINT[result.mode]}` : ""}
             </p>
+            {result.speciesApplied && result.resolvedQuestion ? (
+              <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-200">
+                已理解问题：{result.resolvedQuestion}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
@@ -213,14 +237,16 @@ export function AskAnswerModal({ result, question, speciesKey, onClose }: Props)
             </p>
           ) : null}
           <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={onSupplementToFieldGuide}
-              disabled={supplementLoading}
-              className="flex-1 rounded-full bg-np-cta py-3 text-base font-semibold text-np-cta-ink shadow-md transition hover:bg-np-cta-hover disabled:opacity-60 sm:flex-none sm:px-8"
-            >
-              {supplementLoading ? "整理并入中…" : "补充至图鉴"}
-            </button>
+            {showSupplementToFieldGuide ? (
+              <button
+                type="button"
+                onClick={onSupplementToFieldGuide}
+                disabled={supplementLoading}
+                className="flex-1 rounded-full bg-np-cta py-3 text-base font-semibold text-np-cta-ink shadow-md transition hover:bg-np-cta-hover disabled:opacity-60 sm:flex-none sm:px-8"
+              >
+                {supplementLoading ? "整理并入中…" : "补充至图鉴"}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onClose}

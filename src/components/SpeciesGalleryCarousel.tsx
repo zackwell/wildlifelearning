@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useSwipeCarousel } from "@/lib/use-swipe-carousel";
 import { canUseNextImageForUrl } from "@/lib/species-image-slides";
 
 const CAROUSEL_MS = 4500;
@@ -47,6 +48,21 @@ export function SpeciesGalleryCarousel({
     return () => clearInterval(id);
   }, [slides, paused]);
 
+  const goPrev = useCallback(
+    () => setIdx((i) => (i - 1 + slides.length) % slides.length),
+    [slides.length],
+  );
+  const goNext = useCallback(
+    () => setIdx((i) => (i + 1) % slides.length),
+    [slides.length],
+  );
+  const swipe = useSwipeCarousel({
+    enabled: slides.length > 1,
+    onPrev: goPrev,
+    onNext: goNext,
+    onSwipeStart: () => setPaused(true),
+  });
+
   const current = slides[idx] ?? slides[0];
   if (!current) return null;
 
@@ -57,9 +73,11 @@ export function SpeciesGalleryCarousel({
 
   return (
     <div
-      className={`relative mb-4 aspect-[16/10] w-full max-w-2xl overflow-hidden rounded-2xl border ${frameTone[tone]}`}
+      className={`relative mb-4 aspect-[16/10] w-full max-w-2xl touch-pan-y overflow-hidden rounded-2xl border ${frameTone[tone]}`}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
+      onTouchStart={swipe.onTouchStart}
+      onTouchEnd={swipe.onTouchEnd}
     >
       {useNextImage ? (
         <Image

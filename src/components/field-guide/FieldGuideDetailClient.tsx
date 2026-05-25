@@ -76,6 +76,12 @@ export function FieldGuideDetailClient({ id }: { id: string }) {
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
+            href={`/ask?species=${encodeURIComponent(s.name)}`}
+            className="rounded-xl border border-emerald-800/25 bg-white px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-50 dark:border-emerald-300/25 dark:bg-emerald-950/40 dark:text-emerald-100 dark:hover:bg-emerald-900/50"
+          >
+            智能助手提问
+          </Link>
+          <Link
             href={`/my-field-guide/${id}/learn`}
             className="rounded-xl bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 dark:bg-emerald-600"
           >

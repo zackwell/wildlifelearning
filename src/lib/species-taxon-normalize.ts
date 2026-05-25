@@ -247,3 +247,20 @@ export function normalizeSpeciesTaxon(raw: string): string {
 
   return s;
 }
+
+/** 从 taxon 字段提取「种」级中文名，如「种：水豚（Hydrochoerus hydrochaeris）」→ 水豚 */
+export function extractChineseSpeciesNameFromTaxon(taxon: string): string | null {
+  const s = taxon.trim();
+  if (!s) return null;
+
+  const speciesSegment =
+    s.match(/(?:^|[；;]\s*)种\s*[：:]\s*([^；;]+)/)?.[1]?.trim() ?? null;
+  if (!speciesSegment) return null;
+
+  const zh =
+    speciesSegment.match(/^([\u4e00-\u9fff（）()·]{2,16})/)?.[1]?.replace(/[（(].*$/, "").trim() ??
+    null;
+  if (zh && zh.length >= 2) return zh;
+
+  return null;
+}

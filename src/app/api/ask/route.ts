@@ -1,5 +1,10 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import {
+  buildAskSpeciesSystemNote,
+  enrichAskQuestionWithSpecies,
+  type AskSpeciesContext,
+} from "@/lib/ask-species-context";
 import { getSessionUser } from "@/lib/auth/session";
 import { retrieveChunks, toCitations } from "@/lib/rag/retrieve";
 import { getUserEnabledLiteratureIds } from "@/lib/user-data/literature-meta-server";
@@ -65,6 +70,30 @@ function resolveBaseUrl(): string | undefined {
   return u || undefined;
 }
 
+type AskCitation = ReturnType<typeof toCitations>[number];
+
+function buildAskResponse(
+  answer: string,
+  citations: AskCitation[],
+  mode: string,
+  meta: {
+    rawQuestion: string;
+    resolvedQuestion: string;
+    speciesApplied: boolean;
+    speciesContext: AskSpeciesContext | null;
+  },
+) {
+  return {
+    answer,
+    citations,
+    mode,
+    rawQuestion: meta.rawQuestion,
+    resolvedQuestion: meta.resolvedQuestion,
+    speciesApplied: meta.speciesApplied,
+    speciesContext: meta.speciesContext ?? undefined,
+  };
+}
+
 export async function POST(req: Request) {
   const ip = clientIp(req);
   if (!allowRate(ip)) {
@@ -74,7 +103,11 @@ export async function POST(req: Request) {
     );
   }
 
-  let body: { question?: string; literatureIds?: string[] };
+  let body: {
+    question?: string;
+    literatureIds?: string[];
+    speciesContext?: AskSpeciesContext;
+  };
   try {
     body = await req.json();
   } catch {
@@ -82,15 +115,45 @@ export async function POST(req: Request) {
   }
 
   const question = (body.question ?? "").trim();
+  const speciesContext =
+    body.speciesContext &&
+    typeof body.speciesContext.name === "string" &&
+    body.speciesContext.name.trim()
+      ? {
+          name: body.speciesContext.name.trim(),
+          scientificName:
+            typeof body.speciesContext.scientificName === "string"
+              ? body.speciesContext.scientificName.trim()
+              : undefined,
+          slug:
+            typeof body.speciesContext.slug === "string"
+              ? body.speciesContext.slug.trim()
+              : undefined,
+        }
+      : null;
+
+  const { rawQuestion, resolvedQuestion, speciesApplied } = enrichAskQuestionWithSpecies(
+    question,
+    speciesContext,
+  );
+
   let literatureIds = Array.isArray(body.literatureIds)
     ? body.literatureIds.filter((x) => typeof x === "string" && x.length > 0).slice(0, 30)
     : [];
-  if (!question || question.length > 800) {
+  if (!rawQuestion || rawQuestion.length > 800) {
     return NextResponse.json(
       { error: "请输入 1–800 字以内的问题。" },
       { status: 400 },
     );
   }
+
+  const meta = { rawQuestion, resolvedQuestion, speciesApplied, speciesContext };
+  const speciesNote = speciesContext ? buildAskSpeciesSystemNote(speciesContext) : "";
+  const withSpeciesContext = (system: string) =>
+    speciesNote ? `${system}\n\n${speciesNote}` : system;
+  const userQuestionBlock = speciesApplied
+    ? `用户原始问题：${rawQuestion}\n请按以下理解作答：${resolvedQuestion}`
+    : `用户问题：${resolvedQuestion}`;
 
   const sessionUser = await getSessionUser();
   if (sessionUser) {
@@ -111,7 +174,7 @@ export async function POST(req: Request) {
     try {
       const emb = await client.embeddings.create({
         model: embedModel,
-        input: question,
+        input: resolvedQuestion,
       });
       queryEmbedding = emb.data[0]?.embedding as number[];
     } catch {
@@ -120,7 +183,7 @@ export async function POST(req: Request) {
   }
 
   const hits = retrieveChunks({
-    query: question,
+    query: resolvedQuestion,
     topK: 6,
     queryEmbedding,
     literatureIds,
@@ -132,12 +195,14 @@ export async function POST(req: Request) {
 
   if (!hits.length) {
     if (!apiKey || !hybrid) {
-      return NextResponse.json({
-        answer:
+      return NextResponse.json(
+        buildAskResponse(
           "暂未找到与您问题直接相关的资料摘录。可尝试更换关键词，或在「知识专题」上传文献后再提问。",
-        citations: [],
-        mode: "empty",
-      });
+          [],
+          "empty",
+          meta,
+        ),
+      );
     }
 
     const client = new OpenAI({ apiKey, baseURL: baseURL || undefined });
@@ -146,24 +211,24 @@ export async function POST(req: Request) {
         model: chatModel,
         temperature: 0.35,
         messages: [
-          { role: "system", content: SYSTEM_GENERAL_ONLY },
-          { role: "user", content: `用户问题：${question}` },
+          { role: "system", content: withSpeciesContext(SYSTEM_GENERAL_ONLY) },
+          { role: "user", content: userQuestionBlock },
         ],
       });
       const answer = completion.choices[0]?.message?.content?.trim();
-      return NextResponse.json({
-        answer: answer ?? "模型未返回内容。",
-        citations: [],
-        mode: "general-only",
-      });
+      return NextResponse.json(
+        buildAskResponse(answer ?? "模型未返回内容。", [], "general-only", meta),
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : "模型调用失败";
-      return NextResponse.json({
-        answer:
+      return NextResponse.json(
+        buildAskResponse(
           `暂时无法完成回答（${msg}）。也未找到相关摘录，请稍后重试。`,
-        citations: [],
-        mode: "general-error",
-      });
+          [],
+          "general-error",
+          meta,
+        ),
+      );
     }
   }
 
@@ -178,13 +243,14 @@ export async function POST(req: Request) {
     const bullets = citations
       .map((c) => `• ${c.sourceTitle}（${c.sourcePath}）：${c.excerpt}`)
       .join("\n\n");
-    return NextResponse.json({
-      answer:
-        "（当前未启用完整问答服务，以下为检索到的摘录汇总。）\n\n" +
-        bullets,
-      citations,
-      mode: "keyword-only",
-    });
+    return NextResponse.json(
+      buildAskResponse(
+        "（当前未启用完整问答服务，以下为检索到的摘录汇总。）\n\n" + bullets,
+        citations,
+        "keyword-only",
+        meta,
+      ),
+    );
   }
 
   const systemPrompt = hybrid ? SYSTEM_RAG_HYBRID : SYSTEM_RAG_STRICT;
@@ -194,27 +260,31 @@ export async function POST(req: Request) {
       model: chatModel,
       temperature: 0.2,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: withSpeciesContext(systemPrompt) },
         {
           role: "user",
-          content: `用户问题：${question}\n\n参考资料摘录：\n${context}`,
+          content: `${userQuestionBlock}\n\n参考资料摘录：\n${context}`,
         },
       ],
     });
     const answer = completion.choices[0]?.message?.content?.trim();
-    return NextResponse.json({
-      answer: answer ?? "模型未返回内容。",
-      citations,
-      mode: hybrid ? "rag-hybrid" : "rag",
-    });
+    return NextResponse.json(
+      buildAskResponse(
+        answer ?? "模型未返回内容。",
+        citations,
+        hybrid ? "rag-hybrid" : "rag",
+        meta,
+      ),
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "模型调用失败";
     return NextResponse.json(
-      {
-        answer: `调用语言模型失败：${msg}。以下为检索到的摘录原文供参考。`,
+      buildAskResponse(
+        `调用语言模型失败：${msg}。以下为检索到的摘录原文供参考。`,
         citations,
-        mode: "error-fallback",
-      },
+        "error-fallback",
+        meta,
+      ),
       { status: 200 },
     );
   }

@@ -198,6 +198,6 @@ export function detectFictionalSpeciesDenial(
 
   return {
     reason: "模型将已锚定的真实物种误判为虚构生物。",
-    retryHint: `上次输出称「${anchor?.userQuery ?? ""}」为虚构/神话/不存在的生物，这与系统已确认的真实物种身份矛盾。\n【系统已确认】${hint}\n请按真实昆虫/动物撰写完整图鉴 JSON；name 仍填用户输入；禁止写「虚构」「神话」「不存在于现实」。`,
+    retryHint: `上次输出称「${anchor?.userQuery ?? ""}」为虚构/神话/不存在的生物，这与系统已确认的真实物种身份矛盾。\n【系统已确认】${hint}\n请按真实昆虫/动物撰写完整图鉴 JSON；name 用规范中文种名${anchor?.canonicalDisplayName ? `「${anchor.canonicalDisplayName}」` : ""}；禁止写「虚构」「神话」「不存在于现实」。`,
   };
 }

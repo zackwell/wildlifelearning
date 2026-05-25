@@ -5,7 +5,12 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { SpeciesGalleryCarousel } from "@/components/SpeciesGalleryCarousel";
 import type { ExploreSpeciesPayload } from "@/lib/explore-species";
-import { saveFieldGuideEntry } from "@/lib/personal-field-guide";
+import {
+  saveFieldGuideEntry,
+  findFieldGuideEntryForSpecies,
+  type FieldGuideSavedEntry,
+} from "@/lib/personal-field-guide";
+import { findFieldGuideEntryForSpeciesKey } from "@/lib/field-guide-supplement";
 import { reportSearchLinks } from "@/lib/report-search-links";
 import { speciesImageSlides } from "@/lib/species-image-slides";
 import { SpeciesDisambiguationModal } from "@/components/explore/SpeciesDisambiguationModal";
@@ -59,11 +64,27 @@ type ExploreRequestOptions = {
 };
 
 const ExploreSpeciesPreview = memo(function ExploreSpeciesPreview() {
-  const { data, galleryEditedUrls, saveHint } = useExplorePreview();
+  const { data, galleryEditedUrls, saveHint, savedEntryId } = useExplorePreview();
+  const [saving, setSaving] = useState(false);
   const baseSlides = useMemo(() => speciesImageSlides(data ?? {}), [data]);
   const displaySlides = galleryEditedUrls ?? baseSlides;
 
+  useEffect(() => {
+    if (!data) return;
+    let cancelled = false;
+    void findFieldGuideEntryForSpecies(data).then((entry) => {
+      if (!cancelled && entry) {
+        patchExplorePreview({ savedEntryId: entry.id });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [data?.slug, data?.scientificName]);
+
   if (!data) return null;
+
+  const alreadySaved = Boolean(savedEntryId);
 
   return (
     <div className="mt-6 space-y-4 rounded-2xl border border-sky-900/10 bg-white/90 p-5 dark:border-sky-100/10 dark:bg-sky-950/35">
@@ -178,26 +199,43 @@ const ExploreSpeciesPreview = memo(function ExploreSpeciesPreview() {
 
       <div className="flex flex-col gap-2 border-t border-sky-900/10 pt-4 dark:border-sky-100/10 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              void (async () => {
-                const urls = galleryEditedUrls ?? baseSlides;
-                const entry = await saveFieldGuideEntry({
-                  ...data,
-                  imageUrls: urls.length > 0 ? urls : undefined,
-                  imageUrl: urls[0] ?? null,
-                });
-                prependFieldGuideListCache(entry);
-                patchExplorePreview({
-                  saveHint: `已加入「我的图鉴」（${urls.length > 0 ? `含 ${urls.length} 张配图` : "未含配图"}，已同步云端）。`,
-                });
-              })();
-            }}
-            className="rounded-xl bg-sky-800 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 dark:bg-sky-600"
-          >
-            加入我的图鉴
-          </button>
+          {alreadySaved && savedEntryId ? (
+            <Link
+              href={`/my-field-guide/${savedEntryId}`}
+              className="inline-flex items-center justify-center rounded-xl bg-sky-800/90 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 dark:bg-sky-600"
+            >
+              已在图鉴中 · 查看
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                void (async () => {
+                  if (saving || alreadySaved) return;
+                  setSaving(true);
+                  try {
+                    const urls = galleryEditedUrls ?? baseSlides;
+                    const entry = await saveFieldGuideEntry({
+                      ...data,
+                      imageUrls: urls.length > 0 ? urls : undefined,
+                      imageUrl: urls[0] ?? null,
+                    });
+                    prependFieldGuideListCache(entry);
+                    patchExplorePreview({
+                      savedEntryId: entry.id,
+                      saveHint: `已加入「我的图鉴」（${urls.length > 0 ? `含 ${urls.length} 张配图` : "未含配图"}，已同步云端）。`,
+                    });
+                  } finally {
+                    setSaving(false);
+                  }
+                })();
+              }}
+              className="rounded-xl bg-sky-800 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-60 dark:bg-sky-600"
+            >
+              {saving ? "保存中…" : "加入我的图鉴"}
+            </button>
+          )}
           <Link
             href="/my-field-guide"
             className="inline-flex items-center justify-center rounded-xl border border-sky-800/30 px-4 py-2 text-sm font-semibold text-sky-900 hover:bg-sky-100/60 dark:border-sky-200/25 dark:text-sky-100 dark:hover:bg-sky-900/40"
@@ -224,6 +262,10 @@ export function ExploreAnimals() {
   const [nameSuggestion, setNameSuggestion] = useState<{
     data: SpeciesNameSuggestion;
     originalQuery: string;
+  } | null>(null);
+  const [existingForQuery, setExistingForQuery] = useState<{
+    entry: FieldGuideSavedEntry;
+    query: string;
   } | null>(null);
 
   useEffect(() => {
@@ -257,7 +299,13 @@ export function ExploreAnimals() {
 
   async function runExplore(query: string, opts?: ExploreRequestOptions) {
     setError(null);
-    patchExplorePreview({ data: null, saveHint: null, galleryEditedUrls: null });
+    setExistingForQuery(null);
+    patchExplorePreview({
+      data: null,
+      saveHint: null,
+      galleryEditedUrls: null,
+      savedEntryId: null,
+    });
     if (!opts?.skipDisambiguation) {
       setDisambiguation(null);
       setNameSuggestion(null);
@@ -323,6 +371,7 @@ export function ExploreAnimals() {
       data: json.species,
       galleryEditedUrls: null,
       saveHint: null,
+      savedEntryId: null,
     });
     if (opts?.skipDisambiguation && query !== (opts.inputQuery ?? getExploreDraft().q).trim()) {
       setQ(query);
@@ -332,18 +381,17 @@ export function ExploreAnimals() {
 
   function openDisambiguation(query: string, disambig: SpeciesDisambiguation) {
     setError(null);
-    patchExplorePreview({ data: null, saveHint: null, galleryEditedUrls: null });
+    setExistingForQuery(null);
+    patchExplorePreview({
+      data: null,
+      saveHint: null,
+      galleryEditedUrls: null,
+      savedEntryId: null,
+    });
     setDisambiguation({ data: disambig, originalQuery: query });
   }
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const query = normalizeExploreSpeciesQuery(q);
-    if (!query) return;
-
-    patchExploreQuery({ q: query });
-    setError(null);
-
+  async function continueExploreAfterExistingCheck(query: string) {
     setLoading(true);
     setLoadingQuery(query);
     try {
@@ -390,6 +438,47 @@ export function ExploreAnimals() {
       setLoadingPhase(null);
       setLoadingQuery("");
     }
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const query = normalizeExploreSpeciesQuery(q);
+    if (!query) return;
+
+    patchExploreQuery({ q: query });
+    setError(null);
+    setExistingForQuery(null);
+
+    setLoading(true);
+    setLoadingQuery(query);
+    try {
+      const existing = await findFieldGuideEntryForSpeciesKey(query);
+      if (existing) {
+        setExistingForQuery({ entry: existing, query });
+        return;
+      }
+      await continueExploreAfterExistingCheck(query);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === "Failed to fetch" || msg.includes("Load failed")) {
+        setError(
+          "无法连接服务器（Failed to fetch）。请确认本页与接口同源、开发服务已启动，或检查是否被代理/防火墙拦截。",
+        );
+      } else {
+        setError(msg.startsWith("请求异常：") ? msg : `请求异常：${msg}`);
+      }
+    } finally {
+      setLoading(false);
+      setLoadingPhase(null);
+      setLoadingQuery("");
+    }
+  }
+
+  async function onExistingEntryRegenerate() {
+    if (!existingForQuery) return;
+    const query = existingForQuery.query;
+    setExistingForQuery(null);
+    await continueExploreAfterExistingCheck(query);
   }
 
   async function onDisambiguationSelect(speciesQuery: string) {
@@ -506,6 +595,39 @@ export function ExploreAnimals() {
         <p className="mt-4 text-sm text-red-700 dark:text-red-300" role="alert">
           {error}
         </p>
+      ) : null}
+
+      {existingForQuery ? (
+        <div
+          className="mt-4 rounded-2xl border border-amber-300/70 bg-amber-50/95 p-4 dark:border-amber-500/30 dark:bg-amber-950/40"
+          role="status"
+        >
+          <p className="text-sm leading-relaxed text-amber-950 dark:text-amber-100">
+            「{existingForQuery.entry.species.name}」已在你的图鉴中，无需重复调用 AI 生成。
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href={`/my-field-guide/${existingForQuery.entry.id}`}
+              className="inline-flex rounded-xl bg-amber-800 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 dark:bg-amber-700"
+            >
+              查看已有图鉴
+            </Link>
+            <button
+              type="button"
+              onClick={() => void onExistingEntryRegenerate()}
+              className="rounded-xl border border-amber-800/30 px-4 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100/80 dark:border-amber-200/20 dark:text-amber-50 dark:hover:bg-amber-900/50"
+            >
+              仍要重新生成预览
+            </button>
+            <button
+              type="button"
+              onClick={() => setExistingForQuery(null)}
+              className="rounded-xl px-4 py-2 text-sm font-medium text-amber-900/80 hover:bg-amber-100/60 dark:text-amber-100/80 dark:hover:bg-amber-900/30"
+            >
+              知道了
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {loading && loadingPhase ? (

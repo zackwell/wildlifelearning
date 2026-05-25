@@ -8,6 +8,7 @@ import {
 import type { ExploreSpeciesPayload } from "@/lib/explore-species";
 import type { FieldGuideSavedEntry } from "@/lib/personal-field-guide";
 import { fieldGuideCoverImage } from "@/lib/species-image-slides";
+import { fieldGuideSpeciesMatches } from "@/lib/field-guide-match";
 
 export const runtime = "nodejs";
 
@@ -54,11 +55,19 @@ export async function POST(req: Request) {
   if (!body.species || typeof body.species !== "object") {
     return NextResponse.json({ error: "缺少 species。" }, { status: 400 });
   }
+  const normalizedSpecies = normalizeSpecies(body.species);
+  const existingEntries = await listUserFieldGuides(userOrRes.id);
+  const duplicate = existingEntries.find((e) =>
+    fieldGuideSpeciesMatches(e.species, normalizedSpecies),
+  );
+  if (duplicate) {
+    return NextResponse.json({ entry: duplicate, duplicate: true });
+  }
   const entry: FieldGuideSavedEntry = {
     id: body.id ?? randomUUID(),
     savedAt: body.savedAt ?? new Date().toISOString(),
     starred: false,
-    species: normalizeSpecies(body.species),
+    species: normalizedSpecies,
   };
   try {
     await insertUserFieldGuide(userOrRes.id, entry);

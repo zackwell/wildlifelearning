@@ -3,6 +3,7 @@ import {
   type SpeciesNameAlias,
 } from "@/lib/species-name-aliases";
 import { resolveBaiduBaikeSpecies, baiduReferenceIsRich } from "@/lib/species-baidu-baike";
+import { isUserInputAlias } from "@/lib/species-display-name";
 import {
   formatTaxonIdentityForPrompt,
   resolveTaxonFromWikidata,
@@ -39,6 +40,8 @@ export type SpeciesWikiAnchor = {
   taxonBrief: string | null;
   /** 百度百科等拉取的长参考正文（小节合并） */
   referenceBody: string | null;
+  /** 图鉴展示用规范中文种名（百科中文名优先） */
+  canonicalDisplayName: string | null;
 };
 
 function httpSignal(): AbortSignal | undefined {
@@ -164,6 +167,26 @@ function inferBinomialFromEnWiki(enTitle: string, text: string): string | null {
   return genus;
 }
 
+async function resolveZhWikiTitleFromEn(enTitle: string): Promise<string | null> {
+  const resolved = await wikiResolveExactTitle("en", enTitle);
+  const title = resolved ?? enTitle.trim();
+  if (!title) return null;
+  const api = new URL("https://en.wikipedia.org/w/api.php");
+  api.searchParams.set("action", "query");
+  api.searchParams.set("titles", title);
+  api.searchParams.set("prop", "langlinks");
+  api.searchParams.set("lllang", "zh");
+  api.searchParams.set("format", "json");
+  const j = (await wikiGetJson(api.toString())) as {
+    query?: { pages?: Record<string, { langlinks?: Array<{ lang?: string; title?: string }> }> };
+  } | null;
+  const pages = j?.query?.pages;
+  if (!pages) return null;
+  const page = Object.values(pages)[0];
+  const link = page?.langlinks?.find((l) => l.lang === "zh" && l.title);
+  return link?.title?.trim() ?? null;
+}
+
 async function resolveEnWikiTitleFromZh(zhTitle: string): Promise<string | null> {
   const api = new URL("https://zh.wikipedia.org/w/api.php");
   api.searchParams.set("action", "query");
@@ -187,6 +210,20 @@ function anchorSourceMode(): "baidu" | "wiki" | "baidu_first" {
   return "baidu";
 }
 
+function resolveAnchorCanonicalDisplayName(
+  q: string,
+  alias: SpeciesNameAlias | null,
+  opts: { officialChineseName?: string | null; title?: string | null },
+): string | null {
+  const fromAlias = alias?.canonicalZh?.trim();
+  if (fromAlias) return fromAlias;
+  const official = opts.officialChineseName?.trim();
+  if (official) return official;
+  const title = opts.title?.trim();
+  if (title) return title;
+  return null;
+}
+
 function anchorFromBaidu(
   q: string,
   alias: SpeciesNameAlias | null,
@@ -196,6 +233,10 @@ function anchorFromBaidu(
   if (baidu.scientificName) noteParts.push(`标准学名：${baidu.scientificName}`);
   if (baidu.englishName) noteParts.push(`英文俗名：${baidu.englishName}`);
   if (baidu.taxonBrief) noteParts.push(`分类：${baidu.taxonBrief}`);
+  const canonicalDisplayName = resolveAnchorCanonicalDisplayName(q, alias, {
+    officialChineseName: baidu.officialChineseName,
+    title: baidu.title,
+  });
 
   return {
     userQuery: q,
@@ -207,7 +248,7 @@ function anchorFromBaidu(
     identityNote:
       alias?.note ??
       (noteParts.length
-        ? `系统已从百度百科确认「${q}」为真实物种。${noteParts.join("；")}。正文须按此物种撰写，name 仍填用户输入。`
+        ? `系统已从百度百科确认「${q}」为真实物种。${noteParts.join("；")}。正文须按此物种撰写；JSON 的 name 用规范中文种名${canonicalDisplayName && canonicalDisplayName !== q ? `「${canonicalDisplayName}」` : ""}，若用户输入为别称则在 summary 首句说明。`
         : null),
     resolvedTaxon: null,
     enWikiExtract: null,
@@ -215,6 +256,7 @@ function anchorFromBaidu(
     englishCommonName: baidu.englishName,
     taxonBrief: baidu.taxonBrief,
     referenceBody: baidu.referenceBody || null,
+    canonicalDisplayName,
   };
 }
 
@@ -279,6 +321,7 @@ async function anchorFromZhTitle(
     englishCommonName,
     taxonBrief: null,
     referenceBody: null,
+    canonicalDisplayName: resolveAnchorCanonicalDisplayName(q, alias, { title: zhTitle }),
   };
 }
 
@@ -299,6 +342,7 @@ export async function resolveSpeciesWikiAnchor(userQuery: string): Promise<Speci
     englishCommonName: null,
     taxonBrief: null,
     referenceBody: null,
+    canonicalDisplayName: alias?.canonicalZh?.trim() ?? null,
   };
   if (!q) return base;
 
@@ -353,6 +397,26 @@ export async function resolveSpeciesWikiAnchor(userQuery: string): Promise<Speci
     }
   }
 
+  if (!zhTitle && /^[A-Za-z][A-Za-z\s'-]{0,38}$/.test(q)) {
+    let enTitle = await wikiResolveExactTitle("en", q);
+    if (!enTitle) enTitle = await wikiSearchTitle("en", q);
+    if (enTitle) {
+      const zhFromEn = await resolveZhWikiTitleFromEn(enTitle);
+      if (zhFromEn) {
+        zhTitle = zhFromEn;
+        matchQuality = "search_hit";
+        if (mode !== "wiki") {
+          try {
+            const baidu = await resolveBaiduBaikeSpecies(zhTitle);
+            if (baidu) return anchorFromBaidu(q, alias, baidu);
+          } catch {
+            /* fall through to zh wiki anchor */
+          }
+        }
+      }
+    }
+  }
+
   if (!zhTitle) return base;
 
   const wikiAnchor = await anchorFromZhTitle(q, zhTitle, matchQuality, alias);
@@ -364,12 +428,22 @@ export function buildExploreSpeciesUserPrompt(
   anchor: SpeciesWikiAnchor,
   opts?: { genericGroupOverview?: boolean },
 ): string {
+  const canonicalName = opts?.genericGroupOverview
+    ? query.trim()
+    : anchor.canonicalDisplayName?.trim() || query.trim();
+  const userInputIsAlias =
+    !opts?.genericGroupOverview && isUserInputAlias(query, canonicalName);
+
   const lines = [
     `【用户输入的动物名称】`,
     `「${query}」`,
     "",
     "要求：",
-    "- JSON 字段 name 必须与用户输入完全一致（每个汉字、异体字均保留），不得改成其他字样。",
+    opts?.genericGroupOverview
+      ? `- JSON 字段 name 填用户选择的类群统称「${query}」。`
+      : userInputIsAlias
+        ? `- JSON 字段 name 须填规范中文种名「${canonicalName}」（用户输入「${query}」为该物种常用别称；summary 首句须说明别称关系）。`
+        : `- JSON 字段 name 填规范中文种名「${canonicalName}」（与用户输入一致）。`,
     "- 正文须写用户所指的那一种动物的全部科普内容，不得张冠李戴。",
     "- 禁止因不认识生僻字而擅自写成䴙䴘、小䴙䴘等与用户意图无关的物种。",
   ];
@@ -387,7 +461,9 @@ export function buildExploreSpeciesUserPrompt(
   if (anchor.identityNote) {
     lines.push("", "【物种身份（系统已解析，务必遵守）】", anchor.identityNote);
     if (anchor.modernZhName && anchor.modernZhName !== query) {
-      lines.push(`现代常用名：${anchor.modernZhName}（正文按此物种撰写，name 仍用用户输入）。`);
+      lines.push(
+        `现代常用名：${anchor.modernZhName}（正文按此物种撰写，name 用规范种名「${canonicalName}」）。`,
+      );
     }
   }
 
@@ -463,7 +539,7 @@ export function buildExploreSpeciesUserPrompt(
   } else if (!anchor.identityNote) {
     lines.push(
       "",
-      "【百科未命中】未能从百度百科/维基拉取条目。请据可靠生物学知识作答；仅当确实无法确认该名称指何种动物时，summary 才说明无法核实，name 仍填用户原字。",
+      "【百科未命中】未能从百度百科/维基拉取条目。请据可靠生物学知识作答；仅当确实无法确认该名称指何种动物时，summary 才说明无法核实，name 填该物种规范中文种名（无法确认时可用用户原字）。",
     );
   } else {
     lines.push(

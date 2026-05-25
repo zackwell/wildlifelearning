@@ -1,4 +1,5 @@
 import type { ExploreSpeciesPayload } from "@/lib/explore-species";
+import { findFieldGuideEntryInList } from "@/lib/field-guide-match";
 import { fieldGuideAllSlides, fieldGuideCoverImage } from "@/lib/species-image-slides";
 
 const STORAGE_KEY = "wl-personal-field-guide-v1";
@@ -106,8 +107,17 @@ export async function getFieldGuideEntry(id: string): Promise<FieldGuideSavedEnt
   return loadLocalEntries().find((e) => e.id === id) ?? null;
 }
 
+export async function findFieldGuideEntryForSpecies(
+  species: ExploreSpeciesPayload,
+): Promise<FieldGuideSavedEntry | null> {
+  const entries = await loadFieldGuideEntries();
+  return findFieldGuideEntryInList(entries, species);
+}
+
 export async function saveFieldGuideEntry(species: ExploreSpeciesPayload): Promise<FieldGuideSavedEntry> {
   const normalized = normalizeSpeciesImages(species);
+  const existing = await findFieldGuideEntryForSpecies(normalized);
+  if (existing) return existing;
   try {
     const data = await cloudFetch<{ entry: FieldGuideSavedEntry }>("/api/user/field-guides", {
       method: "POST",

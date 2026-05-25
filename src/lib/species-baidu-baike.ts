@@ -34,6 +34,8 @@ export type BaiduBaikeSpecies = {
   summary: string;
   scientificName: string | null;
   englishName: string | null;
+  /** 信息框「中文名」（可能与用户搜索别称不同） */
+  officialChineseName: string | null;
   taxonBrief: string | null;
   /** 导语多段（词条开头） */
   introParagraphs: string[];
@@ -114,6 +116,19 @@ function extractBinomial(text: string): string | null {
   if (speciesInText[0]) return speciesInText[0];
 
   return familyLevel;
+}
+
+function extractOfficialChineseName(text: string): string | null {
+  const patterns = [
+    /中文名\s*[：:]?\s*([\u4e00-\u9fff（）()·A-Za-z]{2,24})/,
+    /中文名称\s*[：:]?\s*([\u4e00-\u9fff（）()·A-Za-z]{2,24})/,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    const raw = m?.[1]?.trim();
+    if (raw && raw.length >= 2) return raw;
+  }
+  return null;
 }
 
 function extractTaxonBrief(text: string): string | null {
@@ -294,6 +309,7 @@ function extractSummary(introParagraphs: string[], title: string): string {
 function parseLemmaHtml(html: string, query: string): BaiduBaikeSpecies | null {
   if (html.length < 500) return null;
   if (isBaiduBlockedPage(html)) return null;
+  if (isBaiduDisambiguationHtml(html)) return null;
   if (!html.includes(query) && !html.toLowerCase().includes(query.toLowerCase())) {
     if (process.env.BAIDU_DEBUG === "1") {
       console.warn("[baidu-baike] HTML missing query token", query);
@@ -320,6 +336,8 @@ function parseLemmaHtml(html: string, query: string): BaiduBaikeSpecies | null {
     extractBinomial(introParagraphs.join(" ")) ??
     extractBinomial(fallbackText);
   const englishName = extractEnglishName(metaText) ?? extractEnglishName(fallbackText);
+  const officialChineseName =
+    extractOfficialChineseName(metaText) ?? extractOfficialChineseName(fallbackText);
   const taxonBrief =
     extractTaxonBrief(collectLemmaSpanText(extractSummaryHtmlRegion(html))) ??
     extractTaxonBrief(fallbackText);
@@ -333,6 +351,7 @@ function parseLemmaHtml(html: string, query: string): BaiduBaikeSpecies | null {
     summary,
     scientificName,
     englishName,
+    officialChineseName,
     taxonBrief,
     introParagraphs,
     sections,
@@ -350,6 +369,114 @@ function isBaiduBlockedPage(html: string): boolean {
   return false;
 }
 
+/** 百度百科「本词条是一个多义词」消歧页（非具体物种条目） */
+export function isBaiduDisambiguationHtml(html: string): boolean {
+  return html.includes("本词条是一个多义词") || html.includes("请在下列义项中选择浏览");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function collectLemmaIdsFromHtml(html: string, keyword: string): string[] {
+  const ids = new Set<string>();
+  const encoded = encodeURIComponent(keyword);
+  const compact = encodeURIComponent(keyword.replace(/\s+/g, ""));
+  for (const token of [encoded, compact]) {
+    const re = new RegExp(`/item/${escapeRegExp(token)}/(\\d+)`, "gi");
+    for (const m of html.matchAll(re)) {
+      ids.add(m[1]!);
+    }
+  }
+  for (const m of html.matchAll(/lemmaId[=:"']+(\d+)/g)) {
+    ids.add(m[1]!);
+  }
+  return [...ids];
+}
+
+function scoreParsedLemma(parsed: BaiduBaikeSpecies): number {
+  return (
+    (parsed.scientificName ? 1000 : 0) +
+    parsed.referenceBody.length +
+    parsed.sections.length * 50 +
+    parsed.introParagraphs.length * 20
+  );
+}
+
+async function fetchLemmaHtmlFromUrl(url: string, keyword: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": UA,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        Referer: "https://baike.baidu.com/",
+        "Cache-Control": "no-cache",
+      },
+      cache: "no-store",
+      signal: httpSignal(),
+      redirect: "follow",
+    });
+    if (!res.ok) {
+      if (process.env.BAIDU_DEBUG === "1") {
+        console.warn("[baidu-baike] HTTP", res.status, url);
+      }
+      return null;
+    }
+    const html = await res.text();
+    if (html.length < 500) return null;
+    if (isBaiduBlockedPage(html)) {
+      if (process.env.BAIDU_DEBUG === "1") {
+        console.warn("[baidu-baike] blocked or captcha page", keyword, url);
+      }
+      return null;
+    }
+    return html;
+  } catch (e) {
+    if (process.env.BAIDU_DEBUG === "1") {
+      console.warn("[baidu-baike] fetch error", keyword, url, e);
+    }
+    return null;
+  }
+}
+
+async function fetchLemmaHtmlByLemmaId(keyword: string, lemmaId: string): Promise<string | null> {
+  const encoded = encodeURIComponent(keyword);
+  const compact = encodeURIComponent(keyword.replace(/\s+/g, ""));
+  const urls = [
+    `https://baike.baidu.com/item/${encoded}/${lemmaId}`,
+    `https://baike.baidu.com/item/${compact}/${lemmaId}`,
+    `https://m.baike.baidu.com/item/${encoded}/${lemmaId}`,
+    `https://m.baike.baidu.com/item/${compact}/${lemmaId}`,
+  ];
+  for (const url of urls) {
+    const html = await fetchLemmaHtmlFromUrl(url, keyword);
+    if (html) return html;
+  }
+  return null;
+}
+
+async function resolveDisambiguationLemmaHtml(
+  keyword: string,
+  disambigHtml: string,
+): Promise<string | null> {
+  const ids = collectLemmaIdsFromHtml(disambigHtml, keyword);
+  let best: { html: string; score: number } | null = null;
+
+  for (const id of ids.slice(0, 6)) {
+    const html = await fetchLemmaHtmlByLemmaId(keyword, id);
+    if (!html || isBaiduDisambiguationHtml(html)) continue;
+    const parsed = parseLemmaHtml(html, keyword);
+    if (!parsed) continue;
+    const score = scoreParsedLemma(parsed);
+    if (!best || score > best.score) {
+      best = { html, score };
+    }
+  }
+
+  return best?.html ?? null;
+}
+
 async function fetchLemmaHtml(keyword: string): Promise<string | null> {
   const encoded = encodeURIComponent(keyword);
   const compact = encodeURIComponent(keyword.replace(/\s+/g, ""));
@@ -360,39 +487,17 @@ async function fetchLemmaHtml(keyword: string): Promise<string | null> {
     `https://m.baike.baidu.com/item/${compact}`,
   ];
   for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": UA,
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-          Referer: "https://baike.baidu.com/",
-          "Cache-Control": "no-cache",
-        },
-        cache: "no-store",
-        signal: httpSignal(),
-        redirect: "follow",
-      });
-      if (!res.ok) {
-        if (process.env.BAIDU_DEBUG === "1") {
-          console.warn("[baidu-baike] HTTP", res.status, url);
-        }
-        continue;
-      }
-      const html = await res.text();
-      if (html.length < 500) continue;
-      if (isBaiduBlockedPage(html)) {
-        if (process.env.BAIDU_DEBUG === "1") {
-          console.warn("[baidu-baike] blocked or captcha page", keyword, url);
-        }
-        continue;
-      }
-      return html;
-    } catch (e) {
+    const html = await fetchLemmaHtmlFromUrl(url, keyword);
+    if (!html) continue;
+    if (isBaiduDisambiguationHtml(html)) {
+      const resolved = await resolveDisambiguationLemmaHtml(keyword, html);
+      if (resolved) return resolved;
       if (process.env.BAIDU_DEBUG === "1") {
-        console.warn("[baidu-baike] fetch error", keyword, url, e);
+        console.warn("[baidu-baike] disambiguation unresolved", keyword);
       }
+      continue;
     }
+    return html;
   }
   return null;
 }
@@ -423,9 +528,18 @@ export async function resolveBaiduBaikeSpecies(query: string): Promise<BaiduBaik
 export async function isBaiduDisambiguationQuery(query: string): Promise<boolean> {
   const q = query.trim();
   if (!q || q.length > 40) return false;
-  const html = await fetchLemmaHtml(q);
-  if (!html) return false;
-  return html.includes("本词条是一个多义词") || html.includes("请在下列义项中选择浏览");
+  const encoded = encodeURIComponent(q);
+  const compact = encodeURIComponent(q.replace(/\s+/g, ""));
+  const urls = [
+    `https://baike.baidu.com/item/${encoded}`,
+    `https://baike.baidu.com/item/${compact}`,
+  ];
+  for (const url of urls) {
+    const html = await fetchLemmaHtmlFromUrl(url, q);
+    if (!html) continue;
+    return isBaiduDisambiguationHtml(html);
+  }
+  return false;
 }
 
 export function countBaiduReferenceSections(referenceBody: string): number {

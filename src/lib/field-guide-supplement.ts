@@ -1,6 +1,9 @@
 import type { ExploreSpeciesPayload } from "@/lib/explore-species";
 import type { FieldGuideSavedEntry } from "@/lib/personal-field-guide";
 import { loadFieldGuideEntries } from "@/lib/personal-field-guide";
+import {
+  findFieldGuideEntryInListByKey,
+} from "@/lib/field-guide-match";
 import { normalizeModelMarkdown } from "@/lib/normalize-model-markdown";
 
 export type FieldGuideMarkdownField =
@@ -36,14 +39,6 @@ export const FIELD_GUIDE_CATEGORY_META: {
   { field: "summary", label: "摘要" },
 ];
 
-function slugifyKey(input: string): string {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 export function extractMarkdownH2Titles(md: string): string[] {
   const out: string[] = [];
   for (const line of md.split("\n")) {
@@ -55,11 +50,13 @@ export function extractMarkdownH2Titles(md: string): string[] {
 
 export function buildFieldGuideCategoryIndex(species: ExploreSpeciesPayload): string {
   const lines: string[] = [];
+  let filledCount = 0;
   for (const { field, label } of FIELD_GUIDE_CATEGORY_META) {
     const md = species[field] ?? "";
     const subs = extractMarkdownH2Titles(md);
+    if (md.trim()) filledCount += 1;
     lines.push(
-      `- ${label}（field: ${field}）${subs.length ? `：子分类 ${subs.map((t) => `「${t}」`).join("、")}` : "：暂无 ## 子标题"}`,
+      `- ${label}（field: ${field}）${subs.length ? `：子分类 ${subs.map((t) => `「${t}」`).join("、")}` : md.trim() ? "：有正文，暂无 ## 子标题" : "：当前为空，可直接写入首段"}`,
     );
   }
   const custom = species.supplementSections ?? [];
@@ -68,6 +65,9 @@ export function buildFieldGuideCategoryIndex(species: ExploreSpeciesPayload): st
     for (const s of custom) {
       lines.push(`  - 「${s.title}」`);
     }
+  }
+  if (filledCount === 0 && custom.length === 0) {
+    lines.push("- 说明：该条目各内置栏目目前均为空，请根据问答内容选择最合适栏目写入，或使用 newSection 新建分类。");
   }
   return lines.join("\n");
 }
@@ -78,21 +78,8 @@ export async function findFieldGuideEntryForSpeciesKey(
 ): Promise<FieldGuideSavedEntry | null> {
   const raw = key.trim();
   if (!raw) return null;
-
-  const slugKey = slugifyKey(raw);
-  const lower = raw.toLowerCase();
   const entries = await loadFieldGuideEntries();
-
-  for (const e of entries) {
-    const s = e.species;
-    if (slugKey && s.slug === slugKey) return e;
-    if (slugKey && s.slug.replace(/-/g, "") === slugKey.replace(/-/g, "")) return e;
-    if (s.name.trim() === raw) return e;
-    if (s.name.includes(raw) || raw.includes(s.name.trim())) return e;
-    if (s.scientificName.toLowerCase().includes(lower)) return e;
-    if (lower.includes(s.scientificName.toLowerCase())) return e;
-  }
-  return null;
+  return findFieldGuideEntryInListByKey(entries, raw);
 }
 
 function normalizeTitle(title: string): string {
