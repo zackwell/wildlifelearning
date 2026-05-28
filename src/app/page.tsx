@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { WelcomeAuthButtons } from "@/components/auth/GuestLoginButton";
 import { zebraHero } from "@/lib/nature-images";
 
 export default function WelcomePage() {
@@ -28,24 +29,17 @@ export default function WelcomePage() {
           <p className="mt-6 max-w-lg text-base leading-relaxed text-white/90 drop-shadow sm:text-lg">
             欢迎。游客可浏览探索；注册后可保存图鉴与文献（账号数据存于云端）。
           </p>
+          <Link
+            href="/guide"
+            className="mt-4 inline-block text-sm font-medium text-white/85 underline-offset-2 hover:text-white hover:underline"
+          >
+            查看使用说明
+          </Link>
         </div>
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-end gap-3 px-4 pt-5 sm:px-8">
-        <div className="pointer-events-auto flex flex-wrap justify-end gap-3">
-          <Link
-            href="/main"
-            className="rounded-full bg-np-cta px-5 py-2.5 text-sm font-semibold text-np-cta-ink shadow-lg shadow-black/20 ring-1 ring-black/5 transition hover:bg-np-cta-hover"
-          >
-            游客登录
-          </Link>
-          <Link
-            href="/auth/login"
-            className="rounded-full bg-np-cta px-5 py-2.5 text-sm font-semibold text-np-cta-ink shadow-lg shadow-black/20 ring-1 ring-black/5 transition hover:bg-np-cta-hover"
-          >
-            加入
-          </Link>
-        </div>
+        <WelcomeAuthButtons />
       </div>
     </div>
   );

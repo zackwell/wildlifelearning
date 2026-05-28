@@ -15,6 +15,7 @@ export type AskAnswerCitation = {
   excerpt: string;
   sourceTitle: string;
   sourcePath: string;
+  translationNote?: string;
 };
 
 export type AskAnswerData = {
@@ -198,6 +199,9 @@ export function AskAnswerModal({
                     <p className="mt-2 text-justify leading-relaxed text-stone-700/90 dark:text-stone-200/85">
                       {c.excerpt}
                     </p>
+                    {c.translationNote ? (
+                      <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">{c.translationNote}</p>
+                    ) : null}
                   </li>
                 ))}
               </ul>

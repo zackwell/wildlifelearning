@@ -14,6 +14,15 @@ import {
   removeLiteratureMeta,
   setLiteratureEnabledForAsk,
 } from "@/lib/user-literature";
+import {
+  LiteratureTranslateButton,
+  LiteratureTranslateStatus,
+} from "@/components/topics/LiteratureTranslateButton";
+import {
+  LiteratureRemoveConfirmModal,
+  shouldSkipLiteratureRemoveConfirm,
+} from "@/components/topics/LiteratureRemoveConfirmModal";
+import { loadUserPreferences } from "@/lib/user-preferences";
 
 export function TopicsHubClient() {
   const listCache = useLiteratureCatalogCache();
@@ -22,6 +31,8 @@ export function TopicsHubClient() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
+  const [itemErrors, setItemErrors] = useState<Record<string, string>>({});
+  const [removeTarget, setRemoveTarget] = useState<LiteratureMeta | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(() => {
@@ -40,6 +51,13 @@ export function TopicsHubClient() {
     refresh();
   }, [refresh]);
 
+  const anyProcessing = list.some((i) => i.translationProcessing);
+  useEffect(() => {
+    if (!anyProcessing) return;
+    const timer = window.setInterval(() => refresh(), 4000);
+    return () => window.clearInterval(timer);
+  }, [anyProcessing, refresh]);
+
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -51,6 +69,10 @@ export function TopicsHubClient() {
     try {
       const form = new FormData();
       form.append("file", file);
+      form.append(
+        "enabledForAsk",
+        String(loadUserPreferences().literatureDefaultEnabledForAsk),
+      );
       const res = await fetch("/api/literature/upload", {
         method: "POST",
         body: form,
@@ -79,8 +101,7 @@ export function TopicsHubClient() {
     }
   }
 
-  async function onRemove(meta: LiteratureMeta) {
-    if (!confirm(`确定移除「${meta.title}」？`)) return;
+  async function executeRemove(meta: LiteratureMeta) {
     setError(null);
     try {
       await fetch(`/api/literature/${meta.id}`, { method: "DELETE", credentials: "same-origin" });
@@ -92,12 +113,21 @@ export function TopicsHubClient() {
     refresh();
   }
 
+  function requestRemove(meta: LiteratureMeta) {
+    if (shouldSkipLiteratureRemoveConfirm()) {
+      void executeRemove(meta);
+      return;
+    }
+    setRemoveTarget(meta);
+  }
+
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border border-dashed border-emerald-800/25 bg-emerald-50/40 p-6 dark:border-emerald-200/15 dark:bg-emerald-950/25">
         <h2 className="text-lg font-semibold text-emerald-950 dark:text-emerald-50">添加文献</h2>
         <p className="mt-2 max-w-xl text-sm text-emerald-900/85 dark:text-emerald-100/80">
           支持 .txt、.md、.pdf、.doc、.docx，在本页阅读；开启「智能助手引用」后，提问时会优先检索你上传的内容。
+          外文可「生成检索版」，中文文献可「智能排版」，便于助手引用。
         </p>
         <input
           ref={inputRef}
@@ -136,26 +166,59 @@ export function TopicsHubClient() {
               className="rounded-2xl border border-emerald-900/10 bg-white/80 p-4 dark:border-emerald-100/10 dark:bg-emerald-950/30"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-lg font-semibold text-emerald-900 dark:text-emerald-50">{item.title}</p>
                   <p className="mt-1 text-xs text-emerald-800/70 dark:text-emerald-200/65">
                     {item.fileName} · {new Date(item.uploadedAt).toLocaleString("zh-CN")}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Link
-                    href={`/topics/read/${item.id}`}
-                    className="rounded-lg bg-emerald-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 dark:bg-emerald-600"
-                  >
-                    阅读
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => onRemove(item)}
-                    className="rounded-lg border border-red-300/60 px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-50 dark:border-red-900/40 dark:text-red-200"
-                  >
-                    移除
-                  </button>
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/topics/read/${item.id}`}
+                      className="inline-flex shrink-0 items-center rounded-lg bg-emerald-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 dark:bg-emerald-600"
+                    >
+                      阅读
+                    </Link>
+                    <LiteratureTranslateButton
+                      literatureId={item.id}
+                      zhRagReady={item.zhRagReady}
+                      translationFailed={item.translationFailed}
+                      translationProcessing={item.translationProcessing}
+                      predominantlyChinese={item.predominantlyChinese}
+                      compact
+                      onDone={() => {
+                        setItemErrors((prev) => {
+                          const next = { ...prev };
+                          delete next[item.id];
+                          return next;
+                        });
+                        refresh();
+                      }}
+                      onError={(msg) =>
+                        setItemErrors((prev) => {
+                          const next = { ...prev };
+                          if (msg) next[item.id] = msg;
+                          else delete next[item.id];
+                          return next;
+                        })
+                      }
+                    />
+                    <button
+                      type="button"
+                      onClick={() => requestRemove(item)}
+                      className="inline-flex shrink-0 items-center rounded-lg border border-red-300/60 px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-50 dark:border-red-900/40 dark:text-red-200"
+                    >
+                      移除
+                    </button>
+                  </div>
+                  <LiteratureTranslateStatus
+                    zhRagReady={item.zhRagReady}
+                    translationFailed={item.translationFailed}
+                    translationProcessing={item.translationProcessing}
+                    predominantlyChinese={item.predominantlyChinese}
+                    error={itemErrors[item.id]}
+                  />
                 </div>
               </div>
               <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-emerald-900 dark:text-emerald-100">
@@ -172,6 +235,17 @@ export function TopicsHubClient() {
           ))}
         </ul>
       )}
+
+      <LiteratureRemoveConfirmModal
+        open={removeTarget !== null}
+        title={removeTarget?.title ?? ""}
+        onCancel={() => setRemoveTarget(null)}
+        onConfirm={() => {
+          const meta = removeTarget;
+          setRemoveTarget(null);
+          if (meta) void executeRemove(meta);
+        }}
+      />
     </div>
   );
 }

@@ -31,6 +31,12 @@ export default function MainHubPage() {
             智能助手
           </Link>
           <Link
+            href="/guide"
+            className="rounded-xl border border-stone-800/20 px-4 py-2 text-sm font-semibold text-stone-800 transition hover:bg-white/80 dark:border-stone-100/20 dark:text-stone-100 dark:hover:bg-stone-800/50"
+          >
+            使用说明
+          </Link>
+          <Link
             href="/"
             className="rounded-xl px-4 py-2 text-sm font-medium text-stone-600 underline-offset-2 hover:underline dark:text-stone-300"
           >

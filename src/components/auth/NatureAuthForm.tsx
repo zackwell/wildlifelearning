@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { clearGuestModePreferred, enterGuestMode } from "@/lib/guest-mode";
 
 type Mode = "login" | "register";
 
@@ -18,7 +19,6 @@ export function NatureAuthForm({ mode }: { mode: Mode }) {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [wechatHint, setWechatHint] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,6 +41,7 @@ export function NatureAuthForm({ mode }: { mode: Mode }) {
         setError(data.error ?? "请求失败");
         return;
       }
+      clearGuestModePreferred();
       router.push(nextPath?.startsWith("/") && !nextPath.startsWith("//") ? nextPath : "/main");
       router.refresh();
     } catch {
@@ -50,19 +51,10 @@ export function NatureAuthForm({ mode }: { mode: Mode }) {
     }
   }
 
-  function guestContinue() {
+  async function guestContinue() {
+    await enterGuestMode();
     router.push("/main");
-  }
-
-  async function onWeChatClick() {
-    setWechatHint(null);
-    try {
-      const res = await fetch("/api/auth/wechat");
-      const data = (await res.json()) as { error?: string };
-      setWechatHint(data.error ?? "微信登录即将上线。");
-    } catch {
-      setWechatHint("微信登录即将上线，请先用邮箱注册或登录。");
-    }
+    router.refresh();
   }
 
   return (
@@ -149,25 +141,10 @@ export function NatureAuthForm({ mode }: { mode: Mode }) {
           {loading ? "请稍候…" : mode === "login" ? "登录" : "注册"}
         </button>
 
-        <button
-          type="button"
-          onClick={onWeChatClick}
-          className="flex w-full items-center justify-center gap-2 rounded-full border-2 border-[#07c160]/40 bg-[#07c160]/10 py-3 text-sm font-semibold text-[#067a3d] transition hover:bg-[#07c160]/20 dark:border-[#07c160]/30 dark:text-[#9ae6b4]"
-        >
-          <span aria-hidden>微信</span>
-          微信登录（即将上线）
-        </button>
-
-        {wechatHint ? (
-          <p className="rounded-2xl border border-amber-800/20 bg-amber-50/90 px-4 py-3 text-sm text-amber-950 dark:border-amber-200/20 dark:bg-amber-950/40 dark:text-amber-100">
-            {wechatHint}
-          </p>
-        ) : null}
-
         {mode === "login" ? (
           <button
             type="button"
-            onClick={guestContinue}
+            onClick={() => void guestContinue()}
             className="w-full rounded-full border-2 border-stone-800/15 bg-white/60 py-3 text-sm font-semibold text-stone-800 transition hover:bg-white dark:border-stone-100/20 dark:bg-stone-800/40 dark:text-stone-100 dark:hover:bg-stone-800"
           >
             以游客身份继续

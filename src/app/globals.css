@@ -22,7 +22,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(.light) {
     --np-paper: #141210;
     --np-peach: #2a241c;
     --np-terracotta: #e8a090;
@@ -38,6 +38,23 @@
     --background: var(--np-paper);
     --foreground: #f5f0e8;
   }
+}
+
+.dark {
+  --np-paper: #141210;
+  --np-peach: #2a241c;
+  --np-terracotta: #e8a090;
+  --np-cream: #fff4e6;
+  --np-brand-line: #e4c49a;
+  --np-cta: #34d399;
+  --np-cta-hover: #10b981;
+  --np-cta-ink: #022c22;
+
+  --np-welcome-brand: #e8dcc8;
+  --np-welcome-title: #fafafa;
+
+  --background: var(--np-paper);
+  --foreground: #f5f0e8;
 }
 
 body {

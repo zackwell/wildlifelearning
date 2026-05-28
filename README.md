@@ -17,11 +17,11 @@
 | 知识专题 | `/topics` | 上传文献、在线阅读、供助手引用 |
 | 智能助手 | `/ask` | 基于文献摘录 + 可选通识补充的问答 |
 | 账号设置 | `/account` | 昵称、密码、快捷入口 |
+| 使用说明 | `/guide` | 各板块功能与用法 |
 
 **账号能力**
 
 - 邮箱 + 密码注册 / 登录（会话 Cookie，数据存 Neon）
-- 微信登录入口已预留（尚未接入）
 - 登录后：图鉴、题库、文献元数据同步云端；首次登录自动导入浏览器本地旧数据
 - 未登录：仍可使用「游客身份继续」，图鉴等暂存本机浏览器
 
@@ -265,8 +265,6 @@ wildlifelearning/
 | `GET` | `/api/auth/session` | 否 | 当前会话。`{ user: { id, email, displayName } \| null }` |
 | `GET` | `/api/auth/profile` | 是 | 同 session，返回已登录用户资料 |
 | `PATCH` | `/api/auth/profile` | 是 | 更新资料。Body：`{ displayName?, currentPassword?, newPassword? }` |
-| `GET` / `POST` | `/api/auth/wechat` | 否 | 微信登录占位，返回 `501`（尚未接入） |
-
 ---
 
 ### 探索图鉴 · `/api/explore-species`
@@ -412,7 +410,16 @@ wildlifelearning/
 1. 在 Neon 创建 PostgreSQL，配置 `DATABASE_URL`
 2. 部署前或 CI 中执行 `npm run db:push`
 3. 配置 LLM 与 Unsplash 等环境变量
-4. 使用 `npm run build && npm run start`，或部署至 Vercel / 自建 Node 主机
+4. **每次拉代码后必须完整重建**，不要只 `git pull` 后重启进程：
+   ```bash
+   git pull
+   npm install
+   npm run db:push          # 如有 schema 变更
+   pm2 stop wildlifelearning   # 或先停掉旧进程
+   npm run build:clean      # 删 .next 再 build，避免 chunk 不一致
+   pm2 start wildlifelearning  # 或 npm run start
+   ```
+   本地一次性验证可用 `npm run start:prod`（clean + build + start）。
 5. 确保 `data/users/` 目录可写（文献文件持久化）；无状态多实例部署需改为对象存储（当前为单机文件方案）
 
 ---
@@ -428,7 +435,15 @@ wildlifelearning/
 **`npm run db:push` 报缺少连接 URL**  
 确认 `.env.local` 中有 `DATABASE_URL`，且 `drizzle.config.ts` 会加载该文件。
 
-**`/topics` 或上传后 500 / MODULE_NOT_FOUND**  
+**更新代码后出现 `Cannot find module './638.js'` 等 MODULE_NOT_FOUND**  
+这是 Next.js 的 **构建缓存与运行进程不同步**，不是业务代码写错。
+
+| 场景 | 原因 | 做法 |
+|------|------|------|
+| 本地 `npm run dev` | 热更新（HMR）在 Windows 上偶发失效，旧进程仍引用已删除的 webpack chunk | `Ctrl+C` 停掉后执行 `npm run dev:clean`；仍频繁出现可试 `npm run dev:turbo` |
+| 服务器 `next start` / PM2 | `git pull` 后未删 `.next` 就 build，或 build 完未重启进程 | `pm2 stop` → `npm run build:clean` → `pm2 start`（顺序不能省） |
+
+**`/topics` 或上传后 500（非 chunk 编号错误）**  
 执行 `npm run dev:clean` 后重试；文献解析依赖 `pdf-parse` 等包，已在 `next.config.ts` 中设为 `serverExternalPackages`。
 
 **图鉴生成很慢**  

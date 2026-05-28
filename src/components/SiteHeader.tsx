@@ -10,6 +10,7 @@ const nav = [
   { href: "/my-question-bank", label: "我的题库" },
   { href: "/topics", label: "知识专题" },
   { href: "/ask", label: "智能助手" },
+  { href: "/guide", label: "使用说明" },
 ];
 
 export function SiteHeader() {

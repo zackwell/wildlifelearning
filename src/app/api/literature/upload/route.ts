@@ -47,6 +47,7 @@ export async function POST(req: Request) {
     const contentType = req.headers.get("content-type") ?? "";
     let fileName = "";
     let buffer: Buffer;
+    let enabledForAsk = true;
 
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
@@ -54,18 +55,20 @@ export async function POST(req: Request) {
       if (!(file instanceof File)) {
         return NextResponse.json({ error: "请选择要上传的文件。" }, { status: 400 });
       }
+      if (form.get("enabledForAsk") === "false") enabledForAsk = false;
       fileName = file.name.trim();
       if (file.size > MAX_LITERATURE_FILE_BYTES) {
         return NextResponse.json({ error: "文件过大，请控制在 10MB 以内。" }, { status: 400 });
       }
       buffer = Buffer.from(await file.arrayBuffer());
     } else {
-      let body: { fileName?: string; text?: string; title?: string };
+      let body: { fileName?: string; text?: string; title?: string; enabledForAsk?: boolean };
       try {
         body = await req.json();
       } catch {
         return NextResponse.json({ error: "无效的请求。" }, { status: 400 });
       }
+      if (body.enabledForAsk === false) enabledForAsk = false;
       fileName = (body.fileName ?? "").trim();
       const text = (body.text ?? "").trim();
       if (!fileName || !text) {
@@ -121,7 +124,7 @@ export async function POST(req: Request) {
       title: doc.title,
       fileName: doc.fileName,
       uploadedAt: doc.uploadedAt,
-      enabledForAsk: true,
+      enabledForAsk,
     });
 
     return NextResponse.json({

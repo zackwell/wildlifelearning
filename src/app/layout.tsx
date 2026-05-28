@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { AppShell } from "@/components/AppShell";
+import { AdminSecretShortcut } from "@/components/admin/AdminSecretShortcut";
 import { SiteFooter } from "@/components/SiteFooter";
+import { ThemeProvider } from "@/components/auth/ThemeProvider";
 import { UserDataMigrator } from "@/components/auth/UserDataMigrator";
 import "./globals.css";
 
@@ -19,9 +22,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       <body className="font-sans flex min-h-screen flex-col antialiased">
+        <Script id="wl-theme-init" strategy="beforeInteractive">
+          {`(function(){try{var k="wl-user-preferences-v1";var p=JSON.parse(localStorage.getItem(k)||"{}");var s=p.colorScheme||"system";var r=document.documentElement;r.classList.remove("dark");if(s==="dark")r.classList.add("dark");else if(s!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches)r.classList.add("dark");}catch(e){}})();`}
+        </Script>
+        <AdminSecretShortcut />
         <UserDataMigrator />
+        <ThemeProvider />
         <AppShell>{children}</AppShell>
         <SiteFooter />
       </body>

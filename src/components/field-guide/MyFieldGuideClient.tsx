@@ -10,7 +10,7 @@ import {
 } from "@/lib/personal-field-guide";
 import {
   FIELD_GUIDE_SORT_OPTIONS,
-  loadFieldGuideSortMode,
+  filterFieldGuideEntriesByQuery,
   saveFieldGuideSortMode,
   sortFieldGuideEntries,
   type FieldGuideSortMode,
@@ -23,6 +23,7 @@ import {
   useFieldGuideListCache,
 } from "@/lib/client-session-cache";
 import { fieldGuideCoverImage } from "@/lib/species-image-slides";
+import { loadUserPreferences } from "@/lib/user-preferences";
 
 export function MyFieldGuideClient() {
   const listCache = useFieldGuideListCache();
@@ -30,6 +31,7 @@ export function MyFieldGuideClient() {
   const [entries, setEntries] = useState<FieldGuideSavedEntry[]>(() => getFieldGuideListCache() ?? []);
   const [sortMode, setSortMode] = useState<FieldGuideSortMode>("savedAt");
   const [starredOnly, setStarredOnly] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -45,7 +47,9 @@ export function MyFieldGuideClient() {
 
   useEffect(() => {
     setMounted(true);
-    setSortMode(loadFieldGuideSortMode());
+    const prefs = loadUserPreferences();
+    setSortMode(prefs.fieldGuideSortMode);
+    setStarredOnly(prefs.fieldGuideStarredOnlyDefault);
     refresh();
   }, [refresh]);
 
@@ -53,8 +57,11 @@ export function MyFieldGuideClient() {
 
   const visible = useMemo(() => {
     const base = starredOnly ? entries.filter((e) => e.starred) : entries;
-    return sortFieldGuideEntries(base, sortMode);
-  }, [entries, sortMode, starredOnly]);
+    const filtered = filterFieldGuideEntriesByQuery(base, searchQuery);
+    return sortFieldGuideEntries(filtered, sortMode);
+  }, [entries, sortMode, starredOnly, searchQuery]);
+
+  const trimmedSearch = searchQuery.trim();
 
   function onSortChange(mode: FieldGuideSortMode) {
     setSortMode(mode);
@@ -103,37 +110,64 @@ export function MyFieldGuideClient() {
       </header>
 
       {mounted && entries.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setStarredOnly((v) => !v)}
-            className={`rounded-lg border px-3 py-1.5 text-sm font-medium shadow-sm transition ${
-              starredOnly
-                ? "border-amber-400/60 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-300/40 dark:bg-amber-950/50 dark:text-amber-200 dark:hover:bg-amber-950/70"
-                : "border-emerald-800/20 bg-white/90 text-emerald-900 hover:border-emerald-700/35 dark:border-emerald-100/15 dark:bg-emerald-950/50 dark:text-emerald-100"
-            }`}
-          >
-            {starredOnly ? "显示全部" : "只看收藏"}
-          </button>
-          <label className="flex items-center gap-2 text-sm text-emerald-900 dark:text-emerald-100">
-            <span className="font-medium">排序</span>
-            <select
-              value={sortMode}
-              onChange={(e) => onSortChange(e.target.value as FieldGuideSortMode)}
-              className="rounded-lg border border-emerald-800/20 bg-white/90 px-3 py-1.5 text-sm text-emerald-950 shadow-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/25 dark:border-emerald-100/15 dark:bg-emerald-950/50 dark:text-emerald-50"
-            >
-              {FIELD_GUIDE_SORT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+        <div className="space-y-3">
+          <label className="block">
+            <span className="sr-only">搜索图鉴</span>
+            <div className="relative max-w-xl">
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索中文名、学名、分类…"
+                className="w-full rounded-xl border border-emerald-800/20 bg-white/90 py-2.5 pl-4 pr-10 text-sm text-emerald-950 shadow-sm outline-none ring-emerald-600/25 placeholder:text-emerald-800/50 focus:border-emerald-600 focus:ring-2 dark:border-emerald-100/15 dark:bg-emerald-950/50 dark:text-emerald-50 dark:placeholder:text-emerald-200/45"
+              />
+              {trimmedSearch ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs font-medium text-emerald-800/70 hover:bg-emerald-100/80 dark:text-emerald-200/70 dark:hover:bg-emerald-900/50"
+                  aria-label="清空搜索"
+                >
+                  清空
+                </button>
+              ) : null}
+            </div>
           </label>
-          <span className="text-xs text-emerald-800/70 dark:text-emerald-200/65">
-            {starredOnly
-              ? `收藏 ${visible.length} 条`
-              : `共 ${entries.length} 条${starredCount > 0 ? ` · ${starredCount} 条收藏` : ""}`}
-          </span>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setStarredOnly((v) => !v)}
+              className={`rounded-lg border px-3 py-1.5 text-sm font-medium shadow-sm transition ${
+                starredOnly
+                  ? "border-amber-400/60 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-300/40 dark:bg-amber-950/50 dark:text-amber-200 dark:hover:bg-amber-950/70"
+                  : "border-emerald-800/20 bg-white/90 text-emerald-900 hover:border-emerald-700/35 dark:border-emerald-100/15 dark:bg-emerald-950/50 dark:text-emerald-100"
+              }`}
+            >
+              {starredOnly ? "显示全部" : "只看收藏"}
+            </button>
+            <label className="flex items-center gap-2 text-sm text-emerald-900 dark:text-emerald-100">
+              <span className="font-medium">排序</span>
+              <select
+                value={sortMode}
+                onChange={(e) => onSortChange(e.target.value as FieldGuideSortMode)}
+                className="rounded-lg border border-emerald-800/20 bg-white/90 px-3 py-1.5 text-sm text-emerald-950 shadow-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/25 dark:border-emerald-100/15 dark:bg-emerald-950/50 dark:text-emerald-50"
+              >
+                {FIELD_GUIDE_SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-xs text-emerald-800/70 dark:text-emerald-200/65">
+              {trimmedSearch
+                ? `匹配 ${visible.length} / ${starredOnly ? entries.filter((e) => e.starred).length : entries.length} 条`
+                : starredOnly
+                  ? `收藏 ${visible.length} 条`
+                  : `共 ${entries.length} 条${starredCount > 0 ? ` · ${starredCount} 条收藏` : ""}`}
+            </span>
+          </div>
         </div>
       ) : null}
 
@@ -142,6 +176,18 @@ export function MyFieldGuideClient() {
       ) : entries.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-emerald-800/25 bg-emerald-50/50 px-6 py-12 text-center text-sm text-emerald-900/80 dark:border-emerald-200/20 dark:bg-emerald-950/30 dark:text-emerald-100/80">
           暂无图鉴。先在首页搜索动物并生成预览，再点击「加入我的图鉴」。
+        </div>
+      ) : visible.length === 0 && trimmedSearch ? (
+        <div className="rounded-2xl border border-dashed border-emerald-800/25 bg-emerald-50/50 px-6 py-12 text-center text-sm text-emerald-900/80 dark:border-emerald-200/20 dark:bg-emerald-950/30 dark:text-emerald-100/80">
+          未找到与「{trimmedSearch}」匹配的图鉴。可尝试学名、别称或分类关键词，或{" "}
+          <button
+            type="button"
+            onClick={() => setSearchQuery("")}
+            className="font-medium text-emerald-800 underline-offset-2 hover:underline dark:text-emerald-200"
+          >
+            清空搜索
+          </button>
+          。
         </div>
       ) : visible.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-emerald-800/25 bg-emerald-50/50 px-6 py-12 text-center text-sm text-emerald-900/80 dark:border-emerald-200/20 dark:bg-emerald-950/30 dark:text-emerald-100/80">

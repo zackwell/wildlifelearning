@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { isPredominantlyChinese } from "@/lib/literature/detect-language";
+import { readLiteratureDocument } from "@/lib/literature/server-store";
 import { isAuthResponse, requireUser } from "@/lib/auth/require-user";
 import {
   listUserLiteratureMeta,
@@ -7,11 +9,25 @@ import {
 
 export const runtime = "nodejs";
 
+function enrichLiteratureList(userId: string, list: Awaited<ReturnType<typeof listUserLiteratureMeta>>) {
+  return list.map((meta) => {
+    const doc = readLiteratureDocument(userId, meta.id);
+    const tr = doc?.translation;
+    return {
+      ...meta,
+      zhRagReady: tr?.status === "ready",
+      translationFailed: tr?.status === "failed",
+      translationProcessing: tr?.status === "processing",
+      predominantlyChinese: doc ? isPredominantlyChinese(doc.body) : false,
+    };
+  });
+}
+
 export async function GET() {
   const userOrRes = await requireUser();
   if (isAuthResponse(userOrRes)) return userOrRes;
   const list = await listUserLiteratureMeta(userOrRes.id);
-  return NextResponse.json({ list });
+  return NextResponse.json({ list: enrichLiteratureList(userOrRes.id, list) });
 }
 
 export async function PATCH(req: Request) {
@@ -31,5 +47,5 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "未找到该文献。" }, { status: 404 });
   }
   const list = await listUserLiteratureMeta(userOrRes.id);
-  return NextResponse.json({ list });
+  return NextResponse.json({ list: enrichLiteratureList(userOrRes.id, list) });
 }

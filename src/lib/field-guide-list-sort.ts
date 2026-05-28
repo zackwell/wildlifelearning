@@ -1,4 +1,5 @@
 import type { FieldGuideSavedEntry } from "@/lib/personal-field-guide";
+import { loadUserPreferences, saveUserPreferences } from "@/lib/user-preferences";
 
 export type FieldGuideSortMode = "savedAt" | "scientificName" | "name";
 
@@ -8,18 +9,12 @@ export const FIELD_GUIDE_SORT_OPTIONS: { value: FieldGuideSortMode; label: strin
   { value: "name", label: "中文名" },
 ];
 
-const SORT_STORAGE_KEY = "wl-field-guide-sort-v1";
-
 export function loadFieldGuideSortMode(): FieldGuideSortMode {
-  if (typeof window === "undefined") return "savedAt";
-  const raw = window.localStorage.getItem(SORT_STORAGE_KEY);
-  if (raw === "scientificName" || raw === "name" || raw === "savedAt") return raw;
-  return "savedAt";
+  return loadUserPreferences().fieldGuideSortMode;
 }
 
 export function saveFieldGuideSortMode(mode: FieldGuideSortMode): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(SORT_STORAGE_KEY, mode);
+  saveUserPreferences({ fieldGuideSortMode: mode });
 }
 
 export function sortFieldGuideEntries(
@@ -39,4 +34,25 @@ export function sortFieldGuideEntries(
     return a.species.name.localeCompare(b.species.name, "zh-CN");
   });
   return list;
+}
+
+/** 图鉴列表内搜索：中文名、学名、slug、分类、摘要 */
+export function filterFieldGuideEntriesByQuery(
+  entries: FieldGuideSavedEntry[],
+  query: string,
+): FieldGuideSavedEntry[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return entries;
+
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return entries;
+
+  return entries.filter((e) => {
+    const s = e.species;
+    const haystack = [s.name, s.scientificName, s.slug, s.taxon, s.summary]
+      .filter(Boolean)
+      .join("\n")
+      .toLowerCase();
+    return tokens.every((tok) => haystack.includes(tok));
+  });
 }

@@ -48,10 +48,19 @@ export function retrieveChunks(opts: RetrieveOptions): { chunk: RagChunk; score:
 }
 
 export function toCitations(rows: { chunk: RagChunk }[]): Citation[] {
-  return rows.map(({ chunk }) => ({
-    id: chunk.id,
-    excerpt: chunk.text.length > 320 ? `${chunk.text.slice(0, 320)}…` : chunk.text,
-    sourceTitle: chunk.sourceTitle,
-    sourcePath: chunk.sourcePath,
-  }));
+  return rows.map(({ chunk }) => {
+    const isZhRag =
+      chunk.id.startsWith("literature-zh:") ||
+      chunk.sourceTitle.includes("中文检索版");
+    return {
+      id: chunk.id,
+      excerpt:
+        chunk.text.length > 320 ? `${chunk.text.slice(0, 320)}…` : chunk.text,
+      sourceTitle: chunk.sourceTitle,
+      sourcePath: chunk.sourcePath,
+      translationNote: isZhRag
+        ? "摘录来自中文检索译文；阅读原文请打开知识专题对应文献。"
+        : undefined,
+    };
+  });
 }

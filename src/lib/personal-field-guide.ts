@@ -1,5 +1,6 @@
 import type { ExploreSpeciesPayload } from "@/lib/explore-species";
 import { findFieldGuideEntryInList } from "@/lib/field-guide-match";
+import { shouldUseCloudData } from "@/lib/guest-mode";
 import { fieldGuideAllSlides, fieldGuideCoverImage } from "@/lib/species-image-slides";
 
 const STORAGE_KEY = "wl-personal-field-guide-v1";
@@ -81,6 +82,7 @@ export function normalizeSpeciesImages(species: ExploreSpeciesPayload): ExploreS
 }
 
 async function cloudFetch<T>(url: string, init?: RequestInit): Promise<T | null> {
+  if (typeof window !== "undefined" && !shouldUseCloudData()) return null;
   const res = await fetch(url, { ...init, credentials: "same-origin" });
   if (res.status === 401) return null;
   if (!res.ok) throw new Error("request failed");
@@ -275,6 +277,10 @@ export async function toggleFieldGuideStarred(id: string, starred: boolean): Pro
 }
 
 export async function removeFieldGuideEntry(id: string): Promise<void> {
+  if (typeof window !== "undefined" && !shouldUseCloudData()) {
+    persistLocal(loadLocalEntries().filter((e) => e.id !== id));
+    return;
+  }
   try {
     const res = await fetch(`/api/user/field-guides/${id}`, {
       method: "DELETE",

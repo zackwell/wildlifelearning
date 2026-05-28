@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPredominantlyChinese } from "@/lib/literature/detect-language";
 import {
   deleteLiteratureDocument,
   readLiteratureDocument,
@@ -30,6 +31,17 @@ export async function GET(_req: Request, props: Props) {
     fileName: doc.fileName,
     uploadedAt: doc.uploadedAt,
     body: doc.body,
+    predominantlyChinese: isPredominantlyChinese(doc.body),
+    translation: doc.translation
+      ? {
+          status: doc.translation.status,
+          translatedAt: doc.translation.translatedAt,
+          zhBody: doc.translation.zhBody,
+          error: doc.translation.error,
+          mode: doc.translation.mode,
+          chunkCount: doc.translation.zhChunks?.length ?? 0,
+        }
+      : null,
   });
 }
 

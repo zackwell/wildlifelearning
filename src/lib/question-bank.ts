@@ -1,4 +1,5 @@
 import type { AssessmentPaper, AssessmentQuestion, GradingTier } from "@/lib/field-guide-assessment";
+import { shouldUseCloudData } from "@/lib/guest-mode";
 
 const STORAGE_KEY = "wl-question-bank-v1";
 const MAX_SETS = 50;
@@ -53,6 +54,9 @@ function loadLocalSets(): QuestionBankSet[] {
 }
 
 export async function loadQuestionBankSets(): Promise<QuestionBankSet[]> {
+  if (typeof window !== "undefined" && !shouldUseCloudData()) {
+    return loadLocalSets();
+  }
   try {
     const res = await fetch("/api/user/question-bank", { credentials: "same-origin" });
     if (res.status === 401) return loadLocalSets();
@@ -86,19 +90,21 @@ export async function saveQuestionsToBank(opts: {
   };
 
   try {
-    const res = await fetch("/api/user/question-bank", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ set: entry }),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { set: QuestionBankSet };
-      return data.set;
-    }
-    if (res.status !== 401) {
-      const data = (await res.json()) as { error?: string };
-      throw new Error(data.error ?? "保存失败");
+    if (typeof window === "undefined" || shouldUseCloudData()) {
+      const res = await fetch("/api/user/question-bank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ set: entry }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { set: QuestionBankSet };
+        return data.set;
+      }
+      if (res.status !== 401) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? "保存失败");
+      }
     }
   } catch (e) {
     if (e instanceof Error && e.message !== "保存失败" && !e.message.includes("题库")) throw e;
@@ -111,6 +117,10 @@ export async function saveQuestionsToBank(opts: {
 }
 
 export async function removeQuestionBankSet(id: string): Promise<void> {
+  if (typeof window !== "undefined" && !shouldUseCloudData()) {
+    persistLocal(loadLocalSets().filter((s) => s.id !== id));
+    return;
+  }
   try {
     const res = await fetch(`/api/user/question-bank/${id}`, {
       method: "DELETE",

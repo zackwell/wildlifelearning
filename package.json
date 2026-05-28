@@ -8,7 +8,9 @@
     "dev:turbo": "next dev --turbopack",
     "dev:clean": "node scripts/clean-next.mjs && next dev",
     "build": "next build",
+    "build:clean": "node scripts/clean-next.mjs && next build",
     "start": "next start",
+    "start:prod": "node scripts/clean-next.mjs && next build && next start",
     "lint": "next lint",
     "embed": "tsx scripts/embed-content.ts",
     "db:push": "drizzle-kit push",
@@ -28,7 +30,8 @@
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "word-extractor": "^1.0.4"
+    "word-extractor": "^1.0.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

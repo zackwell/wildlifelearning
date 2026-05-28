@@ -1,4 +1,6 @@
 import type { LiteratureMeta } from "@/lib/rag/types";
+import { shouldUseCloudData } from "@/lib/guest-mode";
+import { loadUserPreferences } from "@/lib/user-preferences";
 
 const STORAGE_KEY = "wl-user-literature-v1";
 const MAX_ENTRIES = 30;
@@ -33,6 +35,9 @@ function loadLocalCatalog(): LiteratureMeta[] {
 }
 
 export async function loadLiteratureCatalog(): Promise<LiteratureMeta[]> {
+  if (typeof window !== "undefined" && !shouldUseCloudData()) {
+    return loadLocalCatalog();
+  }
   try {
     const res = await fetch("/api/user/literature", { credentials: "same-origin" });
     if (res.status === 401) return loadLocalCatalog();
@@ -45,7 +50,10 @@ export async function loadLiteratureCatalog(): Promise<LiteratureMeta[]> {
 }
 
 export async function addLiteratureMeta(meta: Omit<LiteratureMeta, "enabledForAsk">): Promise<LiteratureMeta> {
-  const entry: LiteratureMeta = { ...meta, enabledForAsk: true };
+  const entry: LiteratureMeta = {
+    ...meta,
+    enabledForAsk: loadUserPreferences().literatureDefaultEnabledForAsk,
+  };
   const prev = (await loadLiteratureCatalog()).filter((m) => m.id !== entry.id);
   persistLocal([entry, ...prev].slice(0, MAX_ENTRIES));
   return entry;
@@ -56,6 +64,12 @@ export async function removeLiteratureMeta(id: string): Promise<void> {
 }
 
 export async function setLiteratureEnabledForAsk(id: string, enabled: boolean): Promise<void> {
+  if (typeof window !== "undefined" && !shouldUseCloudData()) {
+    persistLocal(
+      loadLocalCatalog().map((m) => (m.id === id ? { ...m, enabledForAsk: enabled } : m)),
+    );
+    return;
+  }
   try {
     const res = await fetch("/api/user/literature", {
       method: "PATCH",

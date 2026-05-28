@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { isGuestModePreferred } from "@/lib/guest-mode";
 
 type SessionUser = {
   id: string;
@@ -51,7 +52,7 @@ export function AuthHeaderActions() {
     return <span className="text-xs text-stone-500 dark:text-stone-400">…</span>;
   }
 
-  if (user) {
+  if (user && !isGuestModePreferred()) {
     const label = user.displayName || user.email.split("@")[0];
     return (
       <div className="flex flex-wrap items-center gap-2">

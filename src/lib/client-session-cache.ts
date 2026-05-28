@@ -46,6 +46,15 @@ export type LiteratureDocSnapshot = {
   fileName: string;
   body: string;
   uploadedAt: string;
+  predominantlyChinese?: boolean;
+  translation?: {
+    status: "processing" | "ready" | "failed";
+    translatedAt: string;
+    zhBody: string;
+    error?: string;
+    mode?: "translate" | "format";
+    chunkCount?: number;
+  } | null;
 };
 
 function createStore<T extends object>(initial: T) {

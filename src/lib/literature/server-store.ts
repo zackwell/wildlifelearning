@@ -73,13 +73,21 @@ export function migrateLegacyLiteratureDocument(userId: string, id: string): boo
   return true;
 }
 
+function literatureRagChunks(doc: LiteratureDocument): RagChunk[] {
+  const zh = doc.translation;
+  if (zh?.status === "ready" && Array.isArray(zh.zhChunks) && zh.zhChunks.length > 0) {
+    return zh.zhChunks;
+  }
+  return doc.chunks;
+}
+
 export function loadLiteratureChunks(userId: string, ids: string[]): RagChunk[] {
   const out: RagChunk[] = [];
   const seen = new Set<string>();
   for (const id of ids) {
     const doc = readLiteratureDocument(userId, id);
     if (!doc) continue;
-    for (const c of doc.chunks) {
+    for (const c of literatureRagChunks(doc)) {
       if (seen.has(c.id)) continue;
       seen.add(c.id);
       out.push(c);
@@ -95,7 +103,7 @@ export function loadLegacyLiteratureChunks(ids: string[]): RagChunk[] {
   for (const id of ids) {
     const doc = readLegacyLiteratureDocument(id);
     if (!doc) continue;
-    for (const c of doc.chunks) {
+    for (const c of literatureRagChunks(doc)) {
       if (seen.has(c.id)) continue;
       seen.add(c.id);
       out.push(c);
